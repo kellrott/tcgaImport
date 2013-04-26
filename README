@@ -1,0 +1,12 @@
+
+=====
+Get the TCGA UUID mapping
+=====
+./tcgaImport.py -t tcga_uuid_map
+
+
+=====
+Get the UCEC clinical matrix
+=====
+
+./tcgaImport.py -u tcga_uuid_map -w /inside/grotto/tmp -m /inside/grotto/TCGA --outdir ./clin/ -d -r -b nationwidechildrens.org_UCEC_bio
