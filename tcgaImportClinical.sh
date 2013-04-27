@@ -45,8 +45,8 @@ done
 
 #./mergeClinical.py clin/${1}.patient clin/${1}.mutation clin/${1}.drug*  > out/tcga_${1}_clinical.patient
 #./cgMeta.py clin/*${1}*.json -n clinicalMatrix tcga_${1}_clinical.patient -p \
---init "u={}" --end "new['sourceUrl'] = u.keys()" -e "for x in doc['sourceUrl']: u[x] = 1" \
--m --merge -o out/tcga_${1}_clinical.patient.json 
+#--init "u={}" --end "new['sourceUrl'] = u.keys()" -e "for x in doc['sourceUrl']: u[x] = 1" \
+#-m --merge -o out/tcga_${1}_clinical.patient.json 
 
 
 #./mergeClinical.py clin_sat/${1}.* > out/tcga_${1}_clinical.aliquot
