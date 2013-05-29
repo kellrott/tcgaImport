@@ -2,7 +2,7 @@
 
 
 """
-Script to scan and extract TCGA data and compile it into the cgData
+Script to scan and extract TCGA data and compile it into coherent matrices
 
 Usage::
     
@@ -47,6 +47,7 @@ Example::
 from xml.dom.minidom import parseString
 import urllib
 import urllib2
+import time
 import os
 import csv
 import sys
@@ -54,6 +55,7 @@ import hashlib
 import tempfile
 import re
 import copy
+import random
 import json
 import datetime
 import hashlib
@@ -81,10 +83,21 @@ class dccwsItem(object):
     def __iter__(self):
         next = self.url        
         while next != None:
-            handle = urllib.urlopen(next)
-            data = handle.read()
-            handle.close()
-            dom = parseString(data)
+            retry_count = 3
+            while retry_count > 0:
+                try:
+                    data = None
+                    handle = urllib.urlopen(next)
+                    data = handle.read()
+                    handle.close()
+                    dom = parseString(data)
+                    retry_count = 0
+                except Exception, e:
+                    retry_count -= 1
+                    if retry_count <= 0:
+                        sys.stderr.write("URL %s : Message Error: %s\n" % (next, data ) )
+                        raise e
+                    time.sleep(random.randint(10, 35))
             # there might not be any archives for a dataset
             if len(dom.getElementsByTagName('queryResponse')) > 0:
                 response = dom.getElementsByTagName('queryResponse').pop()
@@ -138,8 +151,8 @@ class BuildConf:
         self.tarlist = tarlist
         self.abbr = ''
         self.uuid_table = None
-        if 'diseaseAbbr' in meta:
-            self.abbr = meta['diseaseAbbr']
+        if 'annotations' in meta and 'acronym' in meta['annotations']:
+            self.abbr = meta['annotations']['acronym']
     
     def addOptions(self, opts):
         self.workdir_base = opts.workdir_base
@@ -202,20 +215,30 @@ def getBaseBuildConf(basename, platform, mirror):
     for e in q:
         dates.append( datetime.datetime.strptime( e['addedDate'], "%m-%d-%Y" ) )
         if meta is None:
-            meta = {"sourceUrl" : []}            
+            meta = {
+                'annotations' : {}, 
+                'species' : 'Homo sapiens',
+                'disease' : 'cancer',
+                'provenance' : { 'name' : 'tcgaImport', 'used' : [] }
+            }            
             for e2 in CustomQuery(e['platform']):
                 platform = e2['name']
                 meta['platform'] = e2['name']
-                meta['platformTitle'] = e2['displayName']
+                meta['annotations']['platformTitle'] = e2['displayName']
             for e2 in CustomQuery(e['disease']):
-                meta['diseaseAbbr'] = e2['abbreviation']
-                meta['diseaseTitle'] = e2['name']
+                meta['annotations']['acronym'] = e2['abbreviation']
+                meta['annotations']['diseaseTitle'] = e2['name']
                 for e3 in CustomQuery(e2['tissueCollection']):
                     meta['tissue'] = e3['name']
             for e2 in CustomQuery(e['center']):
-                meta['centerTitle'] = e2['displayName']
-                meta['center'] = e2['name']
-        meta['sourceUrl'].append( "http://tcga-data.nci.nih.gov/" + e['deployLocation'] )
+                meta['annotations']['centerTitle'] = e2['displayName']
+                meta['annotations']['center'] = e2['name']
+        meta['provenance']['used'].append(
+            {
+                'url' : "https://tcga-data.nci.nih.gov" + e['deployLocation'],
+                "concreteType": "org.sagebionetworks.repo.model.provenance.UsedURL"
+            }
+        )
         urls[ mirror + e['deployLocation'] ] = platform
 
     print "TCGA Query for mage-tab: ", basename
@@ -227,7 +250,12 @@ def getBaseBuildConf(basename, platform, mirror):
         for e2 in q2:
             print e2
             platform = e2['name']
-        meta['sourceUrl'].append( "http://tcga-data.nci.nih.gov/" + e['deployLocation'] )
+        meta['provenance']['used'].append( 
+            {
+                "concreteType": "org.sagebionetworks.repo.model.provenance.UsedURL",
+                "url" : "https://tcga-data.nci.nih.gov" + e['deployLocation'] 
+            }
+        )
         urls[ mirror + e['deployLocation'] ] = platform
     
     if len(dates) == 0:
@@ -421,7 +449,7 @@ class TCGAGeneticImport(FileImporter):
             iHandle.close()
         if path.endswith("DESCRIPTION.txt"):
             handle = open(path)
-            self.ext_meta['description'] = handle.read()
+            self.description = handle.read()
             handle.close()
     
     @staticmethod
@@ -585,20 +613,17 @@ class TCGASegmentImport(TCGAGeneticImport):
     
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
-            '@context' : "http://purl.org/cgdata/",
-            '@type' : 'bed5', 
-            '@id' : name, 
-            "lastModified" : self.config.version,
-            'rowKeySrc' : {
-                    '@type' :  'idDAG',
-                    '@id' : "tcga.%s" % (self.config.abbr)
-            },
-            'dataSubType' : { "@id" : dataSubType },
-            'dataProducer' : 'TCGA Import',
-            "accessMap" : "public", "redistribution" : "yes" 
+            'name' : name, 
+            'annotations' : {
+                'filetype' : 'bed5', 
+                "lastModified" : self.config.version,
+                'rowKeySrc' : "tcga.%s" % (self.config.abbr),
+                'dataSubType' : dataSubType,
+                'dataProducer' : 'TCGA',
+            }
         }
-        matrixInfo.update(self.ext_meta)
-        matrixInfo.update(self.config.meta)
+        matrixInfo = dict_merge(matrixInfo, self.ext_meta)
+        matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
     
     def fileBuild(self, dataSubType):
@@ -646,29 +671,31 @@ class TCGASegmentImport(TCGAGeneticImport):
 
         self.emitFile( "", self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
 
-
+def dict_merge(x, y):
+    result = dict(x)
+    for k,v in y.iteritems():
+        if k in result:
+            result[k] = dict_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
 
 class TCGAMatrixImport(TCGAGeneticImport):
     
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
-            "@context" : 'http://purl.org/cgdata/',
-            '@type' : 'genomicMatrix', 
-            '@id' : name, 
-            "lastModified" : self.config.version,
-            'dataSubType' : { "@id" : dataSubType },
-            'dataProducer' : 'TCGA', 
-            "accessMap" : "public", 
-            "redistribution" : "yes",
-            'rowKeySrc' : {
-                "@type" : "probe", "@id" : self.dataSubTypes[dataSubType]['probeMap']
-            },
-            'columnKeySrc' : {
-                "@type" : "idDAG", "@id" :  "tcga.%s" % (self.config.abbr)
-            }
+            'annotations' : {
+                'fileType' : 'genomicMatrix',
+                "lastModified" : self.config.version,
+                'dataSubType' : dataSubType,
+                'dataProducer' : 'TCGA', 
+                'rowKeySrc' : self.dataSubTypes[dataSubType]['probeMap'],
+                'columnKeySrc' : "tcga.%s" % (self.config.abbr)
+            }, 
+            'name' : name, 
         }
-        matrixInfo.update(self.ext_meta)
-        matrixInfo.update(self.config.meta)
+        matrixInfo = dict_merge(matrixInfo, self.ext_meta)
+        matrixInfo = dict_merge(matrixInfo, self.config.meta)
         return matrixInfo
         
     def fileBuild(self, dataSubType):
@@ -896,18 +923,17 @@ class TCGAClinicalImport(FileImporter):
 
     def getMeta(self, name):
         fileInfo = {
-            "@context" : "http://purl.org/cgdata/",
-            "@type" : "clinicalMatrix",
-            "@id" : name,
-            "lastModified" :  self.config.version,
-            'dataSubType' : { "@id" : "clinical" },
-            "rowKeySrc" : {
-                "@type" : "idDAG", "@id" :  "tcga.%s" % (self.config.abbr)
-            }
-            
+            "name" : name,
+            "annotations" : {
+                "fileFype" : "clinicalMatrix",
+                "lastModified" :  self.config.version,
+                'dataSubType' : "clinical",
+                "rowKeySrc" : "tcga.%s" % (self.config.abbr)
+            }            
         }
-        fileInfo.update(self.ext_meta)
-        fileInfo.update(self.config.meta)
+        
+        fileInfo = dict_merge(fileInfo, self.ext_meta)
+        fileInfo = dict_merge(fileInfo, self.config.meta)
         return fileInfo
     
     def fileBuild(self, dataSubType):
@@ -1290,13 +1316,14 @@ class MafImport(FileImporter):
 
     def getMeta(self, name):
         fileInfo = {
-            "@context" : "http://purl.org/cgdata/",
-            "@type" : "maf",
-            "@id" : name,
-            "lastModified" :  self.config.version,
+            "name" : name,
+            "annotations" : {
+                "fileType" : "maf",
+                "lastModified" :  self.config.version,
+            }
         }
-        fileInfo.update(self.ext_meta)
-        fileInfo.update(self.config.meta)
+        fileInfo = dict_merge(fileInfo, self.ext_meta)
+        fileInfo = dict_merge(fileInfo, self.config.meta)
         return fileInfo
     
     def fileScan(self, path):
@@ -1314,7 +1341,7 @@ class MafImport(FileImporter):
             iHandle.close()
         if path.endswith("DESCRIPTION.txt"):
             handle = open(path)
-            self.ext_meta['description'] = handle.read()
+            self.description = handle.read()
             handle.close()
 
     @staticmethod    
