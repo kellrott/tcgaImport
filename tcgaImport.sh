@@ -9,7 +9,7 @@ hostname
 
 mkdir -p ./check
 if [ ! -e ./check/$1 ]; then
-	./tcgaImport.py -u $DATADIR/tcga_uuid_map -w $WORKDIR -m $MIRROR --download --outdir $OUTDIR -b $1
+	./tcgaImport.py -u $DATADIR/tcga_uuid_map -w $WORKDIR -m $MIRROR --checksum-delete --download --outdir $OUTDIR -b $1
 	if (($? == "0")); then 
 		touch ./check/$1; 
 	fi

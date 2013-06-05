@@ -567,7 +567,10 @@ class TCGAGeneticImport(FileImporter):
                         self.emit( tmp[0], out,  dataSubType + ".probes" )
 
         
-
+def get_field_match(value, fields):
+    for f in fields:
+        if f in value:
+            return value[f]
 
 class TCGASegmentImport(TCGAGeneticImport):
     
@@ -632,8 +635,8 @@ class TCGASegmentImport(TCGAGeneticImport):
         #numbers
 
         tTrans = self.getTargetMap()        
-        subprocess.call("sort -k 1 %s/segments > %s/segments.sort" % (self.work_dir, self.work_dir), shell=True)
-        sHandle = TableReader(self.work_dir + "/segments.sort")
+        subprocess.call("sort -k 1 %s/%s.segments > %s/%s.segments.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)
+        sHandle = TableReader(self.work_dir + "/%s.segments.sort" % (dataSubType))
 
         segFile = None
         curName = None
@@ -641,10 +644,10 @@ class TCGASegmentImport(TCGAGeneticImport):
         curData = {}
         missingCount = 0
 
-        startField  = "loc.start"
-        endField    = "loc.end"
-        valField    = "seg.mean"
-        chromeField = "chrom"
+        startField  = ["loc.start", "Start"]
+        endField    = ["loc.end", "End"]
+        valField    = ["seg.mean", "Segment_Mean"]
+        chromeField = ["chrom", "Chromosome"]
         
         segFile = None
 
@@ -655,12 +658,17 @@ class TCGASegmentImport(TCGAGeneticImport):
                 curName = self.translateUUID(tTrans[key]) # "-".join( tTrans[ key ].split('-')[0:4] )
                 if curName is not None:
                     try:
-                        chrom = value[ chromeField ].lower()
+                        chrom = get_field_match(value, chromeField).lower()
                         if not chrom.startswith("chr"):
                             chrom = "chr" + chrom
                         chrom = chrom.upper().replace("CHR", "chr")
                         #segFile.write( "%s\t%s\t%s\t%s\t.\t%s\n" % ( curName, chrom, int(value[ startField ])+1, value[ endField ], value[ valField ] ) )
-                        segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( chrom, int(value[ startField ])-1, value[ endField ], curName, value[ valField ] ) )
+                        segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
+                            chrom, 
+                            int(get_field_match(value, startField))-1, 
+                            get_field_match(value, endField), curName, 
+                            get_field_match( value, valField ) ) 
+                        )
                     except KeyError:
                          self.addError( "Field error: %s" % (str(value)))
             except KeyError:
@@ -669,7 +677,8 @@ class TCGASegmentImport(TCGAGeneticImport):
         segFile.close()
         matrixName = self.config.name
 
-        self.emitFile( "", self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
+        self.emitFile( "", dataSubType, self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
+
 
 def dict_merge(x, y):
     result = dict(x)
@@ -1050,10 +1059,10 @@ class SNP6Import(TCGASegmentImport):
         curData = {}
         missingCount = 0
 
-        startField  = "loc.start"
-        endField    = "loc.end"
-        valField    = self.dataSubTypes[dataSubType]['probeFields'][0]
-        chromeField = "chrom"
+        startField  = ["loc.start", "Start"]
+        endField    = ["loc.end", "End"]
+        valField    = [self.dataSubTypes[dataSubType]['probeFields'][0], "Segment_Mean"]
+        chromeField = ["chrom", "Chromosome"]
             
         segFile = None
         sHandle = handle
@@ -1063,18 +1072,22 @@ class SNP6Import(TCGASegmentImport):
             try:
                 curName = self.translateUUID(tmap[key])
                 if curName is not None:
-                    chrom = value[ chromeField ].lower()
+                    chrom = get_field_match(value, chromeField).lower()
                     if not chrom.startswith("chr"):
                         chrom = "chr" + chrom
                     chrom = chrom.upper().replace("CHR", "chr")
-                    segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( chrom, value[ startField ], value[ endField ], curName, value[ valField ] ) )
+                    segFile.write( "%s\t%s\t%s\t%s\t%s\n" % ( 
+                        chrom, get_field_match(value, startField), 
+                        get_field_match(value, endField), 
+                        curName, get_field_match(value, valField ) ) 
+                    )
             except KeyError:
                 self.addError( "TargetInfo Not Found: %s" % (key))
             
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19." + dataSubType, dataSubType)
         meta['assembly'] = { "@id" : 'hg19' }
-        self.emitFile(".hg19." + dataSubType, dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
+        self.emitFile("." + dataSubType + ".hg19", dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
        
 
 class HmiRNAImport(TCGAMatrixImport):
@@ -1189,7 +1202,7 @@ class HumanMethylation450(TCGAMatrixImport):
         }
     }
 
-    def fileScan(self, path):
+    def fileScan(self, path, dataSubType):
         """
         This function takes a TCGA level 3 genetic file (file name and input handle),
         and tries to extract probe levels or target mappings (experimental ID to TCGA barcode)
@@ -1224,7 +1237,7 @@ class HumanMethylation450(TCGAMatrixImport):
                         out[ col ] = { "target" : col }
                     for i in range(1,len(colType)):
                         try:
-                            if colType[i] in self.probeFields:
+                            if colType[i] in self.dataSubTypes[dataSubType]['probeFields']:
                                 out[ colName[i] ][ colType[i] ] = "%.4f" % float(tmp[i])
                         except IndexError:
                             out[ colName[i] ][ colType[i] ] = "NA"
@@ -1326,7 +1339,7 @@ class MafImport(FileImporter):
         fileInfo = dict_merge(fileInfo, self.config.meta)
         return fileInfo
     
-    def fileScan(self, path):
+    def fileScan(self, path, dataSubType):
         name = os.path.basename(path)
         self.emitFile(name, self.getMeta(name), path)
 
@@ -1418,6 +1431,8 @@ tcgaConfig = {
     'HumanMethylation450': HumanMethylation450,
     'IlluminaHiSeq_RNASeq': IlluminaHiSeq_RNASeq,
     'IlluminaGA_RNASeq' : Illumina_RNASeq,
+    'IlluminaGA_RNASeqV2' : Illumina_RNASeqV2,
+    'IlluminaGA_mRNA_DGE' : Illumina_RNASeq,
     'IlluminaHiSeq_RNASeqV2' : Illumina_RNASeqV2,
     'MDA_RPPA_Core' : MDA_RPPA_Core,
     'IlluminaGA_miRNASeq' : Illumina_miRNASeq,
