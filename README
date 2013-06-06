@@ -10,3 +10,17 @@ Get the UCEC clinical matrix
 =====
 
 ./tcgaImport.py -u tcga_uuid_map -w /inside/grotto/tmp -m /inside/grotto/TCGA --outdir ./clin/ -d -r -b nationwidechildrens.org_UCEC_bio
+
+
+=====
+Build Pipeline
+=====
+
+
+
+=====
+File upload
+=====
+
+./synapseLoad_dirs.py  --project syn1446577 out/ --push
+./synapseLoad_files.py --project syn1446577 out/ --push
