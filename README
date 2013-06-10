@@ -16,7 +16,7 @@ Get the UCEC clinical matrix
 Build Pipeline
 =====
 
-
+./build_base.sh
 
 =====
 File upload
@@ -24,3 +24,6 @@ File upload
 
 ./synapseLoad_dirs.py  --project syn1446577 out/ --push
 ./synapseLoad_files.py --project syn1446577 out/ --push
+./synapseLoad_meta.py --project syn1446577 out/ 
+./synapseLoad_provenance.py --project syn1446577 out/
+
