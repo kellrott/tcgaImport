@@ -64,5 +64,7 @@ if __name__ == "__main__":
                 handle.write("READY: %s\n" % (basename)) 
             else:
                 handle.write("UPDATE: %s\n" % (basename)) 
+        else:
+            handle.write("MISSING: %s\n" % (basename)) 
 
     handle.close()
