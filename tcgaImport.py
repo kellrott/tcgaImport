@@ -64,7 +64,7 @@ from glob import glob
 import shutil
 import subprocess
 from argparse import ArgumentParser
-
+from urlparse import urlparse
 
 
 
@@ -158,7 +158,9 @@ class BuildConf:
         self.workdir_base = opts.workdir_base
         self.outdir = opts.outdir
         self.sanitize = opts.sanitize
+        self.mirror = opts.mirror
         self.outpath = opts.outpath
+        self.download = opts.download
         self.metapath = opts.metapath
         self.errorpath = opts.errorpath
         self.clinical_type = opts.clinical_type
@@ -173,6 +175,32 @@ class BuildConf:
             for line in handle:
                 tmp = line.rstrip().split("\t")
                 self.uuid_table[tmp[0]] = tmp[1]
+
+    def getURLPath(self, url):
+        if self.mirror is None:
+            print "Define mirror location"
+            sys.exit(1)
+
+        src = url # "https://tcga-data.nci.nih.gov/" + url
+        path = urlparse(url).path
+        dst = os.path.join(self.mirror, re.sub("^/", "", path))
+        dir = os.path.dirname(dst)
+        if not os.path.exists(dir):
+            print "mkdir", dir
+            os.makedirs(dir)
+        if not os.path.exists( dst ):
+            if self.download:    
+                print "download %s to %s" % (src, dst)
+                urllib.urlretrieve(src, dst)
+            else:
+                raise Exception("Missing source file: %s" % url)
+        return dst
+
+
+
+
+    def buildRequest(self):
+        return self.meta
     
     def translateUUID(self, uuid):
         if self.uuid_table is None or uuid not in self.uuid_table:
@@ -216,6 +244,7 @@ def getBaseBuildConf(basename, platform, mirror):
         dates.append( datetime.datetime.strptime( e['addedDate'], "%m-%d-%Y" ) )
         if meta is None:
             meta = {
+                'name' : basename,
                 'annotations' : {}, 
                 'species' : 'Homo sapiens',
                 'disease' : 'cancer',
@@ -302,15 +331,18 @@ class FileImporter:
          "DESCRIPTIO$"
     ]
     
-    def __init__(self, config):
+    def __init__(self, config, build_req):
         self.config = config
+        self.build_req = build_req
         
     def extractTars(self):  
         if not os.path.exists(self.config.workdir_base):
             os.makedirs(self.config.workdir_base)      
         self.work_dir = tempfile.mkdtemp(dir=self.config.workdir_base)
         print "Extract to ", self.work_dir
-        for path in self.config.tarlist:
+        for record in self.build_req['provenance']['used']:
+            url = record['url']
+            path = self.config.getURLPath(url)
             subprocess.check_call([ "tar", "xzf", path, "-C", self.work_dir])#, stderr=sys.stdout)
         
     def run(self):        
@@ -1423,6 +1455,7 @@ tcgaConfig = {
     'HG-CGH-244A': CGH244AImport,
     'HG-CGH-415K_G4124A': CGH415K_G4124A,
     'HT_HG-U133A': HT_HGU133A,
+    'HG-U133_Plus_2' : HT_HGU133A,
     'HuEx-1_0-st-v2': HuEx1_0stv2,
     'Human1MDuo': Human1MDuoImport,
     'HumanHap550': HumanHap550,
@@ -1470,138 +1503,40 @@ def supported_list():
         if e['name'] in tcgaConfig:
             yield e['name']
 
-
-if __name__ == "__main__":
-    
-    parser = ArgumentParser()
-    #Stack.addJobTreeOptions(parser) 
-
-    #other importer options
-    parser.add_argument("-t", "--uuid-download", dest="uuid_download", help="Download UUID/Barcode Table", default=False)
-    parser.add_argument("--samples", dest="get_samples", action="store_true", default=False)
-    parser.add_argument("--barcode-dag", dest="barcode_dag", help="Write TCGA Barcode DAG for cancer type", default=None)
-
-    #list operations
-    parser.add_argument("-a", "--all-platform", dest="all_platform", action="store_true", help="Get list of supported platforms", default=False)
-    parser.add_argument("-z", "--all-archives", dest="all_archives", action="store_true", help="List all archives", default=False)
-    parser.add_argument("--all-mutation", dest="all_mutation", action="store_true", default=False)
-    parser.add_argument("-p", "--platform", dest="platform", help="Platform Selection", default=None)
-    parser.add_argument("-l", "--supported", dest="supported_list", action="store_true", help="List Supported Platforms", default=None)
-    parser.add_argument("-f", "--filelist", dest="filelist", help="List files needed to convert TCGA project basename into cgData", default=None)
-    parser.add_argument("-c", "--cancer", dest="cancer", help="List Archives by cancer type", default=None)
-    parser.add_argument("--list-platform-outputs", dest="list_platform_outputs", default=None)
-
-    #archive importers
-    parser.add_argument("-b", "--basename", dest="basename", help="Convert TCGA project basename into cgData", default=None)
-    parser.add_argument("--clinical-type", dest="clinical_type", help="Clinical Data Type", default=None)
-    parser.add_argument("--all-clinical", dest="all_clinical", action="store_true", help="List all clinical archives", default=False)
-    parser.add_argument("--out-clinical", dest="out_clinical", action="append", nargs=3, default=[])
-
-    #import options    
-    parser.add_argument("-u", "--uuid", dest="uuid_table", help="UUID to Barcode Table", default=None)
-    parser.add_argument("-m", "--mirror", dest="mirror", help="Mirror Location", default=None)
-    parser.add_argument("-w", "--workdir", dest="workdir_base", help="Working directory", default="/tmp")
-    parser.add_argument("-d", "--download", dest="download", help="Download files for archive", action="store_true", default=False)
-    parser.add_argument("-e", "--level", dest="level", help="Data Level ", default="3")
-    parser.add_argument("--checksum", dest="checksum", help="Check project md5", action="store_true", default=False)
-    parser.add_argument("--checksum-delete", dest="checksum_delete", help="Check project md5 and delete bad files", action="store_true", default=False)
-    parser.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False) 
-
-    #output
-    parser.add_argument("--outdir", dest="outdir", help="Working directory", default="./")
-    parser.add_argument("-o", "--out", dest="outpath", help="Output Dest", default=None)    
-    parser.add_argument("--out-error", dest="errorpath", help="Output Error", default=None)
-    parser.add_argument("--out-meta", dest="metapath", help="Output Meta", default=None)
-    
-
-    options = parser.parse_args()
-
-    #if archive name is provided, determine the platform
-    basename_platform_alias = None
-    if options.basename:
-        q = CustomQuery("Archive[@isLatest=1][baseName=%s]" % (options.basename))
-        platform_url = None
-        for e in q:
-            platform_url = e['platform']
-        q = CustomQuery(platform_url)
-        for e in q:
-            basename_platform_alias = e['alias']
-        print basename_platform_alias
-
-    ##################
-    #other data importer 
-    ##################
-    if options.uuid_download:
-        url="https://tcga-data.nci.nih.gov/uuid/uuidBrowserExport.htm"
-        data = {}
-        data['exportType'] = 'tab'
-        data['cols'] = "uuid,barcode"
-        urllib.urlretrieve( url, options.uuid_download, data=urllib.urlencode(data))
+def archive_list():
+    q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]]")
+    out = {}
+    for e in q:
+        name = e['baseName']
+        if name not in out:
+            out[name] = True
+    return out.keys()
 
 
-    if options.get_samples:
-        url="https://tcga-data.nci.nih.gov/datareports/aliquotExport.htm"
-        data = {}
-    
-        data['exportType'] = 'tab'
-        data['cols'] = 'aliquotId,disease,bcrBatch,center,platform,levelOne,levelTwo,levelThree'
-        data['filterReq'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
-        data['formFilter'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
-        handle = urllib.urlopen( url + "?" + urllib.urlencode(data))
-    
-        for line in handle:
-            tmp = line.rstrip().split("\t")
-            if tmp[7] == "Submitted":
-                if tmp[0][13]=='0':
-                    print "\t".join( [ tmp[0], tmp[1], "Tumor", tmp[4] ] )
-                elif tmp[0][13] == '1':
-                    print "\t".join( [ tmp[0], tmp[1], "Normal", tmp[4] ] )
-
-    if options.barcode_dag is not None:
-        url="https://tcga-data.nci.nih.gov/datareports/aliquotExport.htm"
-        data = {}        
-        data['exportType'] = 'tab'
-        data['cols'] = 'aliquotId'
-        data['filterReq'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
-        data['formFilter'] = json.dumps({"disease":options.barcode_dag,"levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
-        handle = urllib.urlopen( url + "?" + urllib.urlencode(data))
-
-        for line in handle:
-            if line.startswith("TCGA"):
-                tmp = line.rstrip().split('-')
-                
-                print "%s\t%s" % ("-".join( tmp[0:3] ), "-".join( tmp[0:4] ))
-                print "%s\t%s" % ("-".join( tmp[0:4] ), "-".join( tmp[0:4] + [tmp[4][0:2]] ))
-                
-                print "%s\t%s" % ("-".join( tmp[0:4] + [tmp[4][0:2]] ), "-".join( tmp[0:5] ))
-                print "%s\t%s" % ("-".join( tmp[0:5] ), "-".join( tmp ))
-
-        
+def main_list(options):
     #################
     #list operations
     #################
-    if options.all_platform:
+    if options.list_type == "platform":
         for e in platform_list():
             print e
     
-    if options.supported_list:
+    if options.list_type == "supported":
         for e in supported_list():
             print e
-            
+    
+    """    
     if options.platform:
         for name in tcgaConfig[options.platform].getArchiveList(options.platform):
             print name
+    """
 
-    if options.all_archives:
-        q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_%s]]" % (options.level))
-        out = {}
-        for e in q:
-            name = e['baseName']
-            if name not in out:
-                print name
-                out[name] = True
 
-    if options.all_clinical:
+    if options.list_type == "archive":
+        for c in archive_list():
+            print c
+
+    if options.list_type == "clinical":
         q = CustomQuery("Archive[@isLatest=1][Platform[@alias=bio]]")
         out = {}
         for e in q:
@@ -1610,7 +1545,7 @@ if __name__ == "__main__":
                 print name
                 out[name] = True
 
-    if options.all_mutation:
+    if options.list_type == "mutation":
         q = CustomQuery("Archive[@isLatest=1][Platform[@alias=IlluminaGA_DNASeq]]")
         out = {}
         for e in q:
@@ -1628,28 +1563,112 @@ if __name__ == "__main__":
                     print name
                     out[name] = True
 
+    """
     if options.list_platform_outputs:
         for p in tcgaConfig[options.list_platform_outputs].getOutputList():
             print p
+    """
 
 
+    if options.list_type == "cancer":
+        if options.name is None:
+            q = CustomQuery("Disease")
+            for e in q:
+                print e['abbreviation']
 
-    if options.cancer is not None:
-        q = CustomQuery("Archive[@isLatest=1][Disease[@abbreviation=%s]][ArchiveType[@type=Level_%s]]" % (options.cancer, options.level))
-        out = {}
-        for e in q:
-            name = e['baseName']
-            if name not in out:
-                print name
-                out[name] = True
+        else:
+            q = CustomQuery("Archive[@isLatest=1][Disease[@abbreviation=%s]][ArchiveType[@type=Level_3]]" % (options.name))
+            out = {}
+            for e in q:
+                name = e['baseName']
+                if name not in out:
+                    print name
+                    out[name] = True
 
-    if options.filelist:
+
+    if options.list_type == "filelist":
         q = CustomQuery("Archive[@baseName=%s][@isLatest=1][ArchiveType[@type=Level_%s]]" % (options.filelist, options.level))
         for e in q:
             print e['deployLocation']
         q = CustomQuery("Archive[@baseName=%s][@isLatest=1][ArchiveType[@type=mage-tab]]" % (options.filelist))
         for e in q:
-            print e['deployLocation']
+            print e['deployLocation']    
+    return 0
+
+
+def main_download(options):
+
+    ##################
+    #other data importer 
+    ##################
+
+    if options.download_type == 'uuid':
+        url="https://tcga-data.nci.nih.gov/uuid/uuidBrowserExport.htm"
+        data = {}
+        data['exportType'] = 'tab'
+        data['cols'] = "uuid,barcode"
+        if options.output is not None:
+            urllib.urlretrieve( url, options.output, data=urllib.urlencode(data))
+        else:
+            print urllib.urlopen(url, data=urllib.urlencode(data)).read()
+
+    if options.download_type == 'samples':
+        url="https://tcga-data.nci.nih.gov/datareports/aliquotExport.htm"
+        data = {}
+    
+        data['exportType'] = 'tab'
+        data['cols'] = 'aliquotId,disease,bcrBatch,center,platform,levelOne,levelTwo,levelThree'
+        data['filterReq'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
+        data['formFilter'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
+        handle = urllib.urlopen( url + "?" + urllib.urlencode(data))
+    
+        for line in handle:
+            tmp = line.rstrip().split("\t")
+            if tmp[7] == "Submitted":
+                if tmp[0][13]=='0':
+                    print "\t".join( [ tmp[0], tmp[1], "Tumor", tmp[4] ] )
+                elif tmp[0][13] == '1':
+                    print "\t".join( [ tmp[0], tmp[1], "Normal", tmp[4] ] )
+
+    if options.download_type == 'barcode_dag':
+        url="https://tcga-data.nci.nih.gov/datareports/aliquotExport.htm"
+        data = {}        
+        data['exportType'] = 'tab'
+        data['cols'] = 'aliquotId'
+        data['filterReq'] = json.dumps({"disease":"","levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
+        data['formFilter'] = json.dumps({"disease":options.barcode_dag,"levelOne":"","aliquotId":"","center":"","levelTwo":"","bcrBatch":"","platform":"","levelThree":""})
+        handle = urllib.urlopen( url + "?" + urllib.urlencode(data))
+
+        for line in handle:
+            if line.startswith("TCGA"):
+                tmp = line.rstrip().split('-')
+                
+                print "%s\t%s" % ("-".join( tmp[0:3] ), "-".join( tmp[0:4] ))
+                print "%s\t%s" % ("-".join( tmp[0:4] ), "-".join( tmp[0:4] + [tmp[4][0:2]] ))
+                
+                print "%s\t%s" % ("-".join( tmp[0:4] + [tmp[4][0:2]] ), "-".join( tmp[0:5] ))
+                print "%s\t%s" % ("-".join( tmp[0:5] ), "-".join( tmp ))
+    return 0
+
+
+def get_basename_platform(basename):
+    q = CustomQuery("Archive[@isLatest=1][baseName=%s]" % (basename))
+    platform_url = None
+    for e in q:
+        platform_url = e['platform']
+    q = CustomQuery(platform_url)
+    for e in q:
+        basename_platform_alias = e['alias']
+    return basename_platform_alias
+
+
+def main_build(options):
+
+    #if archive name is provided, determine the platform
+    basename_platform_alias = None
+    if options.basename:
+        basename_platform_alias = get_basename_platform(options.basename)
+ 
 
     ###################
     # Archive Importers
@@ -1689,44 +1708,107 @@ if __name__ == "__main__":
                     print "OK:", dst
 
 
-        if options.download:
-            if options.mirror is None:
-                print "Define mirror location"
-                sys.exit(1)
-
-            urls = []
-            
-            for e in tcgaConfig[basename_platform_alias].getArchiveUrls(options.basename):
-                urls.append( e )
-                urls.append( e + ".md5" )          
-
-            e = tcgaConfig[basename_platform_alias].getMageUrl(options.basename)
-            if e:
-                urls.append( e )
-                urls.append( e + ".md5" )          
-      
-            for url in urls:
-                src = "https://tcga-data.nci.nih.gov/" + url
-                dst = os.path.join(options.mirror, re.sub("^/", "", url))
-                dir = os.path.dirname(dst)
-                if not os.path.exists(dir):
-                    print "mkdir", dir
-                    os.makedirs(dir)
-                if not os.path.exists( dst ):
-                    print "download %s to %s" % (src, dst)
-                    urllib.urlretrieve(src, dst)
+        
 
         if options.mirror is None:
             sys.stderr.write("Need mirror location\n")
-            sys.exit(1)
+            return 1
         
         conf = getBaseBuildConf(options.basename, basename_platform_alias, options.mirror)
         conf.addOptions(options)
         if conf.platform not in tcgaConfig:
             sys.stderr.write("Platform %s not supported\n" % (conf.platform))
-            sys.exit(1)
+            return 1
 
-        ext = tcgaConfig[conf.platform](conf)
+        if options.report:
+            print json.dumps(conf.buildRequest(), indent=4)
+            return 0
+
+        ext = tcgaConfig[conf.platform](conf, conf.buildRequest())
         ext.run()
+    return 0
 
 
+
+
+if __name__ == "__main__":
+    
+    parser = ArgumentParser()
+    #Stack.addJobTreeOptions(parser) 
+
+    subparsers = parser.add_subparsers(title="subcommand")
+
+
+    parser_list = subparsers.add_parser('list')
+    parser_list.add_argument("list_type", choices=[
+        "platforms",
+        "archives",
+        "mutations", 
+        "platform",
+        "supported",
+        "files",
+        "cancer",
+        "clinical"
+    ])
+    parser_list.add_argument("name", nargs="?", default=None )
+
+    """
+    parser_list.add_argument("platforms", dest="all_platform", action="store_true", help="Get list of supported platforms", default=False)
+    parser_list.add_argument("archives", dest="all_archives", action="store_true", help="List all archives", default=False)
+    parser_list.add_argument("mutations", dest="all_mutation", action="store_true", default=False)
+    parser_list.add_argument("platform", dest="platform", help="Platform Selection", default=None)
+    parser_list.add_argument("supported", dest="supported_list", action="store_true", help="List Supported Platforms", default=None)
+    parser_list.add_argument("files", dest="filelist", help="List files needed to convert TCGA project basename into cgData", default=None)
+    parser_list.add_argument("cancer", dest="cancer", help="List Archives by cancer type", default=None)
+    parser_list.add_argument("outputs", dest="list_platform_outputs", default=None)
+    parser_list.add_argument("clinical", dest="all_clinical", action="store_true", help="List all clinical archives", default=False)
+    """
+    parser_list.set_defaults(func=main_list)
+
+
+    #other importer options
+
+    parser_download = subparsers.add_parser('download')
+    parser_download.add_argument("download_type", choices=[
+        "uuid",
+        "samples",
+        "barcode-dag"
+    ])
+    parser_download.add_argument("-o", "--output", help="Output Path", default=None)
+
+
+    """
+    parser_download.add_argument("uuid", dest="uuid_download", help="Download UUID/Barcode Table", default=False)
+    parser_download.add_argument("samples", dest="get_samples", action="store_true", default=False)
+    parser_download.add_argument("barcode-dag", dest="barcode_dag", help="Write TCGA Barcode DAG for cancer type", default=None)
+    """
+    parser_download.set_defaults(func=main_download)
+
+    #archive importers
+    parser_build = subparsers.add_parser('build')
+
+    parser_build.add_argument("basename", help="Convert TCGA project basename into cgData", default=None)
+    parser_build.add_argument("--clinical-type", dest="clinical_type", help="Clinical Data Type", default=None)
+    parser_build.add_argument("--out-clinical", dest="out_clinical", action="append", nargs=3, default=[])
+
+    #import options    
+    parser_build.add_argument("-u", "--uuid", dest="uuid_table", help="UUID to Barcode Table", default=None)
+    parser_build.add_argument("-m", "--mirror", dest="mirror", help="Mirror Location", default=None)
+    parser_build.add_argument("-w", "--workdir", dest="workdir_base", help="Working directory", default="/tmp")
+    parser_build.add_argument("-d", "--download", dest="download", help="Download files for archive", action="store_true", default=False)
+    parser_build.add_argument("-e", "--level", dest="level", help="Data Level ", default="3")
+    parser_build.add_argument("--checksum", dest="checksum", help="Check project md5", action="store_true", default=False)
+    parser_build.add_argument("--checksum-delete", dest="checksum_delete", help="Check project md5 and delete bad files", action="store_true", default=False)
+    parser_build.add_argument("-r", "--sanitize", dest="sanitize", action="store_true", help="Remove race/ethnicity from clinical data", default=False) 
+
+    #output
+    parser_build.add_argument("--report", dest="report", help="Print Build Report", action="store_true", default=False)
+    parser_build.add_argument("--outdir", dest="outdir", help="Working directory", default="./")
+    parser_build.add_argument("-o", "--out", dest="outpath", help="Output Dest", default=None)    
+    parser_build.add_argument("--out-error", dest="errorpath", help="Output Error", default=None)
+    parser_build.add_argument("--out-meta", dest="metapath", help="Output Meta", default=None)
+    parser_build.set_defaults(func=main_build)
+
+
+    args = parser.parse_args()
+    sys.exit(args.func(args))
