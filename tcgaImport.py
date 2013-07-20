@@ -207,23 +207,27 @@ class BuildConf:
             return uuid
         return self.uuid_table[uuid]
     
-    def getOutPath(self, name):
+    def getOutPath(self, dataSubType):
+        """
         if self.outpath is not None:
             return self.outpath
         if name in self.clinical_type_map:
             return self.clinical_type_map[name][0]
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
-        return os.path.join(self.outdir, self.name) + name
+        """
+        return os.path.join(self.outdir, self.name + "." + dataSubType)
 
-    def getOutMeta(self, name):
+    def getOutMeta(self, dataSubType):
+        """
         if self.outpath is not None:
             if self.metapath is not None:
                 return self.metapath
             return self.outpath + ".json"
         if name in self.clinical_type_map:
             return self.clinical_type_map[name][1]
-        return os.path.join(self.outdir, self.name) + name + ".json"
+        """
+        return os.path.join(self.outdir, self.name + "." + dataSubType) + ".json"
 
     def getOutError(self, name):
         if self.outpath is not None:
@@ -244,7 +248,7 @@ def getBaseBuildConf(basename, platform, mirror):
         dates.append( datetime.datetime.strptime( e['addedDate'], "%m-%d-%Y" ) )
         if meta is None:
             meta = {
-                'name' : basename,
+                #'name' : basename,
                 'annotations' : {}, 
                 'species' : 'Homo sapiens',
                 'disease' : 'cancer',
@@ -402,9 +406,9 @@ class FileImporter:
             self.out[port] = open(self.work_dir + "/" + port, "w")
         self.out[port].write( "%s\t%s\n" % (key, json.dumps(data)))
 
-    def emitFile(self, name, dataSubType, meta, file):
+    def emitFile(self, dataSubType, meta, file):
         md5 = hashlib.md5()
-        oHandle = open(self.config.getOutPath(name), "wb")
+        oHandle = open(self.config.getOutPath(dataSubType), "wb")
         with open(file,'rb') as f: 
             for chunk in iter(lambda: f.read(8192), ''): 
                 md5.update(chunk)
@@ -412,11 +416,11 @@ class FileImporter:
         oHandle.close()
         md5str = md5.hexdigest()
         meta['md5'] = md5str
-        mHandle = open(self.config.getOutMeta(name), "w")
+        mHandle = open(self.config.getOutMeta(dataSubType), "w")
         mHandle.write( json.dumps(meta))
         mHandle.close()
         if len(self.errors):
-            eHandle = open( self.config.getOutError(name), "w" )
+            eHandle = open( self.config.getOutError(dataSubType), "w" )
             for msg in self.errors:
                 eHandle.write( msg + "\n" )
             eHandle.close()
@@ -709,14 +713,16 @@ class TCGASegmentImport(TCGAGeneticImport):
         segFile.close()
         matrixName = self.config.name
 
-        self.emitFile( "", dataSubType, self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
+        self.emitFile( dataSubType, self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
 
 
 def dict_merge(x, y):
+    print "dict", x, y
     result = dict(x)
     for k,v in y.iteritems():
         if k in result:
-            result[k] = dict_merge(result[k], v)
+            if result[k] != v:
+                result[k] = dict_merge(result[k], v)
         else:
             result[k] = v
     return result
@@ -801,7 +807,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
         matrixFile.close()
         matrixName = self.config.name    
         if rowCount > 0:
-            self.emitFile( "." + dataSubType, self.dataSubTypes[dataSubType], self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType) )
+            self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.matrix_file"  % (self.work_dir, dataSubType) )
 
 
 adminNS = "http://tcga.nci/bcr/xml/administration/2.3"
@@ -870,7 +876,7 @@ class TCGAClinicalImport(FileImporter):
             out = e['deployLocation']
         return out
 
-    def parseXMLFile(self, dom):    
+    def parseXMLFile(self, dom, dataSubType):    
         root_node = dom.childNodes[0]
         admin = {}
         for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/admin/*"):
@@ -885,80 +891,86 @@ class TCGAClinicalImport(FileImporter):
             if 'xsd_ver' in attr:
                 #print patientName, stack[-1], attr, text
                 patient_data[attr.get('preferred_name', stack[-1])] = { "value" : text }
-        self.emit( patient_barcode, patient_data, "patient" )
+        if dataSubType == "patient":
+            self.emit( patient_barcode, patient_data, "patient" )
         
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample"):
-            sample_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/bcr_sample_barcode"):
-                sample_barcode = c_text
-            sample_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/*"):
-                if 'xsd_ver' in c_attr:
-                    sample_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( sample_barcode, sample_data, "sample" )
+        if dataSubType == "sample":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample"):
+                sample_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/bcr_sample_barcode"):
+                    sample_barcode = c_text
+                sample_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/*"):
+                    if 'xsd_ver' in c_attr:
+                        sample_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( sample_barcode, sample_data, "sample" )
 
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion"):
-            portion_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "portion/bcr_portion_barcode"):
-                portion_barcode = c_text
-            portion_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "portion/*"):
-                if 'xsd_ver' in c_attr:
-                    portion_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( portion_barcode, portion_data, "portion" )
+        if dataSubType == "portion":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion"):
+                portion_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "portion/bcr_portion_barcode"):
+                    portion_barcode = c_text
+                portion_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "portion/*"):
+                    if 'xsd_ver' in c_attr:
+                        portion_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( portion_barcode, portion_data, "portion" )
         
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion/analytes/analyte"):
-            analyte_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "analyte/bcr_analyte_barcode"):
-                analyte_barcode = c_text
-            analyte_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "analyte/*"):
-                if 'xsd_ver' in c_attr:
-                    analyte_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( analyte_barcode, analyte_data, "analyte" )
+        if dataSubType == "analyte":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion/analytes/analyte"):
+                analyte_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "analyte/bcr_analyte_barcode"):
+                    analyte_barcode = c_text
+                analyte_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "analyte/*"):
+                    if 'xsd_ver' in c_attr:
+                        analyte_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( analyte_barcode, analyte_data, "analyte" )
 
-
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion/analytes/analyte/aliquots/aliquot"):
-            aliquot_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/bcr_aliquot_barcode"):
-                aliquot_barcode = c_text
-            aliquot_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/*"):
-                if 'xsd_ver' in c_attr:
-                    aliquot_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( aliquot_barcode, aliquot_data, "aliquot" )
+        if dataSubType == "aliquot":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample/portions/portion/analytes/analyte/aliquots/aliquot"):
+                aliquot_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/bcr_aliquot_barcode"):
+                    aliquot_barcode = c_text
+                aliquot_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/*"):
+                    if 'xsd_ver' in c_attr:
+                        aliquot_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( aliquot_barcode, aliquot_data, "aliquot" )
         
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/drugs/drug"):
-            drug_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "drug/bcr_drug_barcode"):
-                drug_barcode = c_text
-            drug_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "drug/*"):
-                if 'xsd_ver' in c_attr:
-                    drug_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( drug_barcode, drug_data, "drug" )
+        if dataSubType == "drug":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/drugs/drug"):
+                drug_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "drug/bcr_drug_barcode"):
+                    drug_barcode = c_text
+                drug_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "drug/*"):
+                    if 'xsd_ver' in c_attr:
+                        drug_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( drug_barcode, drug_data, "drug" )
 
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/radiations/radiation"):
-            radiation_barcode = None
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "radiation/bcr_radiation_barcode"):
-                radiation_barcode = c_text
-            radiation_data = {}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "radiation/*"):
-                if 'xsd_ver' in c_attr:
-                    radiation_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( radiation_barcode, radiation_data, "radiation" )
+        if dataSubType == "radiation":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/radiations/radiation"):
+                radiation_barcode = None
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "radiation/bcr_radiation_barcode"):
+                    radiation_barcode = c_text
+                radiation_data = {}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "radiation/*"):
+                    if 'xsd_ver' in c_attr:
+                        radiation_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( radiation_barcode, radiation_data, "radiation" )
 
-
-        for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/follow_ups/follow_up"):
-            follow_up_barcode = None
-            sequence = s_attr['sequence']
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "follow_up/bcr_followup_barcode"):
-                follow_up_barcode = c_text
-            follow_up_data = { "sequence" : {"value" : sequence}}    
-            for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "follow_up/*"):
-                if 'xsd_ver' in c_attr:
-                    follow_up_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
-            self.emit( follow_up_barcode, follow_up_data, "followup" )
+        if dataSubType == "followup":
+            for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/follow_ups/follow_up"):
+                follow_up_barcode = None
+                sequence = s_attr['sequence']
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "follow_up/bcr_followup_barcode"):
+                    follow_up_barcode = c_text
+                follow_up_data = { "sequence" : {"value" : sequence}}    
+                for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "follow_up/*"):
+                    if 'xsd_ver' in c_attr:
+                        follow_up_data[c_attr.get('preferred_name', c_stack[-1])] = { "value" : c_text }
+                self.emit( follow_up_barcode, follow_up_data, "followup" )
 
             
 
@@ -1010,7 +1022,7 @@ class TCGAClinicalImport(FileImporter):
                             cols[colEnum[col]] = matrix[key][col]['value']
                     handle.write("%s\t%s\n" % (key, "\t".join(cols).encode("ASCII", "replace")))
                 handle.close()
-                self.emitFile( "." + matrixName, matrixName, self.getMeta(self.config.name + "." + matrixName), "%s/%s_file"  % (self.work_dir, matrixName)) 
+                self.emitFile( matrixName, matrixName, self.getMeta(self.config.name + "." + matrixName), "%s/%s_file"  % (self.work_dir, matrixName)) 
         
         
         
@@ -1119,7 +1131,7 @@ class SNP6Import(TCGASegmentImport):
         segFile.close()
         meta = self.getMeta(self.config.name + ".hg19." + dataSubType, dataSubType)
         meta['assembly'] = { "@id" : 'hg19' }
-        self.emitFile("." + dataSubType + ".hg19", dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
+        self.emitFile(dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
        
 
 class HmiRNAImport(TCGAMatrixImport):
@@ -1346,10 +1358,38 @@ class Illumina_miRNASeq(TCGAMatrixImport):
 
 class bioImport(TCGAClinicalImport):
     dataSubTypes = {
-        'bio' : {
+        "patient" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$'
-        }
+        }, 
+        "sample" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "radiation" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "drug" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "portion" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "analyte" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "aliquot" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        }, 
+        "followup" : {
+            'sampleMap' : 'tcga.iddag',
+            'fileInclude' : '.*.xml$'
+        } 
     }
 
 class MafImport(FileImporter):
@@ -1373,7 +1413,7 @@ class MafImport(FileImporter):
     
     def fileScan(self, path, dataSubType):
         name = os.path.basename(path)
-        self.emitFile(name, self.getMeta(name), path)
+        self.emitFile("mutation", self.getMeta(name), path)
 
     def mageScan(self, path):
         if path.endswith(".idf.txt"):
@@ -1532,7 +1572,7 @@ def main_list(options):
     """
 
 
-    if options.list_type == "archive":
+    if options.list_type == "archives":
         for c in archive_list():
             print c
 
@@ -1705,10 +1745,7 @@ def main_build(options):
                         os.unlink(dst)
                         os.unlink(dst + ".md5")
                 else:
-                    print "OK:", dst
-
-
-        
+                    print "OK:", dst        
 
         if options.mirror is None:
             sys.stderr.write("Need mirror location\n")
