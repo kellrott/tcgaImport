@@ -4,6 +4,7 @@ import synapseclient
 import tcgaImport
 from argparse import ArgumentParser
 import json
+import sys
 
 if __name__ == "__main__":
 
