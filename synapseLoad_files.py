@@ -93,63 +93,63 @@ if __name__ == "__main__":
         handle.close()
         
         dpath = re.sub(r'.json$', '', a)
-                                
-        query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
-        res = syn.query(query)
-        #print meta['@id'], res
-        if res['totalNumberOfResults'] == 0:
-            log( "not found:" + meta['name'] )
-            if args.push:
-                parentId= study_ids.getParent(meta)
-                if parentId is not None:
-                    entityStr={ u'entityType': u'org.sagebionetworks.repo.model.Data', u'name': meta['name'], u'parentId':parentId}
-                    entity = syn.createEntity(entityStr)
-                    entity = syn.uploadFile(entity, dpath)
-        else:
-            ent_id = res['results'][0]['entity.id']
-            log( "Found: " + ent_id )
-            upload = False
-            
-            if 'entity.md5' not in res['results'][0] or res['results'][0]['entity.md5'][0] != meta['md5']:
-                log("MD5 Miss: " + ent_id)
-                upload = True
+        if os.stat(dpath).st_size > 0:                               
+            query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, meta['name'])
+            res = syn.query(query)
+            #print meta['@id'], res
+            if res['totalNumberOfResults'] == 0:
+                log( "not found:" + meta['name'] )
+                if args.push:
+                    parentId= study_ids.getParent(meta)
+                    if parentId is not None:
+                        entityStr={ u'entityType': u'org.sagebionetworks.repo.model.Data', u'name': meta['name'], u'parentId':parentId}
+                        entity = syn.createEntity(entityStr)
+                        entity = syn.uploadFile(entity, dpath)
             else:
-                log("MD5 Match: " + ent_id)
-            
-            """
-            if not args.skip_md5:
+                ent_id = res['results'][0]['entity.id']
+                log( "Found: " + ent_id )
                 upload = False
-                ent = syn.getEntity( ent_id )
-                if 'md5' not in ent:
+                
+                if 'entity.md5' not in res['results'][0] or res['results'][0]['entity.md5'][0] != meta['md5']:
+                    log("MD5 Miss: " + ent_id)
                     upload = True
                 else:
-                    if os.path.basename(ent['files'][0]) != os.path.basename(dpath):
-                        log("File Name Mismatch: %s -> %s" % (ent['files'][0], dpath))
-                        upload = True
-                    elif os.path.basename(ent['cacheDir']) == "archive.zip_unpacked":
-                        log("Replacing old-style 'archive.zip'")
-                        upload = True                            
-                    else:
-                        #syn_md5 = get_md5(os.path.join(ent['cacheDir'], ent['files'][0]))
-                        syn_md5 = ent['md5']
-                        if meta['md5'] != syn_md5:
-                            upload = True
-                        else:
-                            log("MD5 Match: " + ent_id)
-            """
+                    log("MD5 Match: " + ent_id)
                 
-            if upload:
-                if args.push:
-                    log("Uploading: " + ent_id)
-                    #archive_path = "archive.zip"
-                    #z = zipfile.ZipFile(archive_path, "w")
-                    #z.write(dpath, os.path.basename(dpath))
-                    #z.close()
-                    entity=syn.getEntity(ent_id)
-                    entity['contentType']='text/csv'
-                    entity = syn.updateEntity(entity)
-                    #syn.uploadFile(entity, archive_path)
-                    syn.uploadFile(entity, dpath)
-                else:
-                    log("To Be Uploaded: " + ent_id + " : " + meta['name'])
+                """
+                if not args.skip_md5:
+                    upload = False
+                    ent = syn.getEntity( ent_id )
+                    if 'md5' not in ent:
+                        upload = True
+                    else:
+                        if os.path.basename(ent['files'][0]) != os.path.basename(dpath):
+                            log("File Name Mismatch: %s -> %s" % (ent['files'][0], dpath))
+                            upload = True
+                        elif os.path.basename(ent['cacheDir']) == "archive.zip_unpacked":
+                            log("Replacing old-style 'archive.zip'")
+                            upload = True                            
+                        else:
+                            #syn_md5 = get_md5(os.path.join(ent['cacheDir'], ent['files'][0]))
+                            syn_md5 = ent['md5']
+                            if meta['md5'] != syn_md5:
+                                upload = True
+                            else:
+                                log("MD5 Match: " + ent_id)
+                """
                     
+                if upload:
+                    if args.push:
+                        log("Uploading: " + ent_id)
+                        #archive_path = "archive.zip"
+                        #z = zipfile.ZipFile(archive_path, "w")
+                        #z.write(dpath, os.path.basename(dpath))
+                        #z.close()
+                        entity=syn.getEntity(ent_id)
+                        entity['contentType']='text/csv'
+                        entity = syn.updateEntity(entity)
+                        #syn.uploadFile(entity, archive_path)
+                        syn.uploadFile(entity, dpath)
+                    else:
+                        log("To Be Uploaded: " + ent_id + " : " + meta['name'])
+                        
