@@ -652,7 +652,7 @@ class TCGASegmentImport(TCGAGeneticImport):
     
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
-            'name' : name, 
+            'name' : name + "." + dataSubType, 
             'annotations' : {
                 'filetype' : 'bed5', 
                 "lastModified" : self.config.version,
@@ -713,7 +713,7 @@ class TCGASegmentImport(TCGAGeneticImport):
         segFile.close()
         matrixName = self.config.name
 
-        self.emitFile( dataSubType, self.getMeta(matrixName, 'cna'), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
+        self.emitFile( dataSubType, self.getMeta(matrixName, dataSubType), "%s/%s.segment_file"  % (self.work_dir, dataSubType) )     
 
 
 def dict_merge(x, y):
@@ -739,7 +739,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
                 'rowKeySrc' : self.dataSubTypes[dataSubType]['probeMap'],
                 'columnKeySrc' : "tcga.%s" % (self.config.abbr)
             }, 
-            'name' : name, 
+            'name' : name + "." + dataSubType, 
         }
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
@@ -974,9 +974,9 @@ class TCGAClinicalImport(FileImporter):
 
             
 
-    def getMeta(self, name):
+    def getMeta(self, name, dataSubType):
         fileInfo = {
-            "name" : name,
+            "name" : name + "." + dataSubType,
             "annotations" : {
                 "fileFype" : "clinicalMatrix",
                 "lastModified" :  self.config.version,
@@ -991,39 +991,42 @@ class TCGAClinicalImport(FileImporter):
     
     def fileBuild(self, dataSubType):
 
+        """
         matrixList = [ "patient", "sample", "radiation", "drug", "portion", "analyte", "aliquot", "followup" ]
         if self.config.clinical_type is not None:
             matrixList = [ self.config.clinical_type ]
 
         for matrixName in matrixList:
-            if os.path.exists( "%s/%s" % (self.work_dir, matrixName)):
-                subprocess.call("cat %s/%s | sort -k 1 > %s/%s.sort" % (self.work_dir, matrixName, self.work_dir, matrixName), shell=True)
-                handle = TableReader(self.work_dir + "/" + matrixName + ".sort")
-                matrix = {}
-                colEnum = {}
-                for key, value in handle:
-                    if key not in matrix:
-                        matrix[key] = {}
-                    for col in value:
-                        matrix[key][col] = value[col]
-                        if col not in colEnum:
-                            if not self.config.sanitize or col not in [ 'race', 'ethnicity' ]:
-                                colEnum[col] = len(colEnum)
-                
-                handle = open( os.path.join(self.work_dir, matrixName + "_file"), "w")
-                cols = [None] * (len(colEnum))
+        """
+        matrixName = dataSubType
+        if os.path.exists( "%s/%s" % (self.work_dir, matrixName)):
+            subprocess.call("cat %s/%s | sort -k 1 > %s/%s.sort" % (self.work_dir, matrixName, self.work_dir, matrixName), shell=True)
+            handle = TableReader(self.work_dir + "/" + matrixName + ".sort")
+            matrix = {}
+            colEnum = {}
+            for key, value in handle:
+                if key not in matrix:
+                    matrix[key] = {}
+                for col in value:
+                    matrix[key][col] = value[col]
+                    if col not in colEnum:
+                        if not self.config.sanitize or col not in [ 'race', 'ethnicity' ]:
+                            colEnum[col] = len(colEnum)
+            
+            handle = open( os.path.join(self.work_dir, matrixName + "_file"), "w")
+            cols = [None] * (len(colEnum))
+            for col in colEnum:
+                cols[colEnum[col]] = col
+            handle.write("sample\t%s\n" % ("\t".join(cols)))
+            for key in matrix:
+                cols = [""] * (len(colEnum))
                 for col in colEnum:
-                    cols[colEnum[col]] = col
-                handle.write("sample\t%s\n" % ("\t".join(cols)))
-                for key in matrix:
-                    cols = [""] * (len(colEnum))
-                    for col in colEnum:
-                        if col in matrix[key]:
-                            cols[colEnum[col]] = matrix[key][col]['value']
-                    handle.write("%s\t%s\n" % (key, "\t".join(cols).encode("ASCII", "replace")))
-                handle.close()
-                self.emitFile( matrixName, matrixName, self.getMeta(self.config.name + "." + matrixName), "%s/%s_file"  % (self.work_dir, matrixName)) 
-        
+                    if col in matrix[key]:
+                        cols[colEnum[col]] = matrix[key][col]['value']
+                handle.write("%s\t%s\n" % (key, "\t".join(cols).encode("ASCII", "replace")))
+            handle.close()
+            self.emitFile( matrixName, matrixName, self.getMeta(self.config.name, dataSubType), "%s/%s_file"  % (self.work_dir, matrixName)) 
+    
         
         
 class AgilentImport(TCGAMatrixImport):
@@ -1129,7 +1132,7 @@ class SNP6Import(TCGASegmentImport):
                 self.addError( "TargetInfo Not Found: %s" % (key))
             
         segFile.close()
-        meta = self.getMeta(self.config.name + ".hg19." + dataSubType, dataSubType)
+        meta = self.getMeta(self.config.name + ".hg19", dataSubType)
         meta['assembly'] = { "@id" : 'hg19' }
         self.emitFile(dataSubType, meta, "%s/%s.out"  % (self.work_dir, dataSubType))
        
@@ -1225,7 +1228,7 @@ class HumanHap550(TCGASegmentImport):
 
 class HumanMethylation27(TCGAMatrixImport):
     dataSubTypes = {
-        'DNAMethylation' : {
+        'betaValue' : {
             'probeMap' : 'illuminaMethyl27K_gpl8490',
             'sampleMap' :  'tcga.iddag',
             'dataType' : 'genomicMatrix',
@@ -1237,7 +1240,7 @@ class HumanMethylation27(TCGAMatrixImport):
 
 class HumanMethylation450(TCGAMatrixImport):
     dataSubTypes =  {
-        'DNAMethylation' : {
+        'betaValue' : {
             'probeMap' :  'illuminaHumanMethylation450',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
@@ -1288,7 +1291,7 @@ class HumanMethylation450(TCGAMatrixImport):
                         except ValueError:
                             out[ colName[i] ][ colType[i] ] = "NA"
                     for col in out:
-                        self.emit( tmp[0], out[col], "probes" )
+                        self.emit( tmp[0], out[col], dataSubType + ".probes" )
                 
 class Illumina_RNASeq(TCGAMatrixImport):
     dataSubTypes = {
@@ -1348,7 +1351,7 @@ class MDA_RPPA_Core(TCGAMatrixImport):
 
 class Illumina_miRNASeq(TCGAMatrixImport):
     dataSubTypes = {
-        'miRNA' : {
+        'miRNAExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '^.*.mirna.quantification.txt$',
             'probeFields' : ['reads_per_million_miRNA_mapped'],
@@ -1399,9 +1402,9 @@ class MafImport(FileImporter):
         }
     }
 
-    def getMeta(self, name):
+    def getMeta(self, name, dataSubType):
         fileInfo = {
-            "name" : name,
+            "name" : name + "." + dataSubType,
             "annotations" : {
                 "fileType" : "maf",
                 "lastModified" :  self.config.version,
@@ -1413,7 +1416,7 @@ class MafImport(FileImporter):
     
     def fileScan(self, path, dataSubType):
         name = os.path.basename(path)
-        self.emitFile("mutation", self.getMeta(name), path)
+        self.emitFile("mutation", self.getMeta(name, dataSubType), path)
 
     def mageScan(self, path):
         if path.endswith(".idf.txt"):
