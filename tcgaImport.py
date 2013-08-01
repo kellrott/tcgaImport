@@ -837,12 +837,12 @@ def dom_scan_iter(node, stack, prefix):
 class TCGAClinicalImport(FileImporter):
     
     def fileScan(self, path, dataSubType):
-        print "Parsing", path
+        print "Parsing", dataSubType, path
         handle = open(path)
         data = handle.read()
         handle.close()
         xml=parseString(data)
-        self.parseXMLFile(xml)
+        self.parseXMLFile(xml, dataSubType)
             
     def getText(self, nodelist):
         rc = []
@@ -974,13 +974,13 @@ class TCGAClinicalImport(FileImporter):
 
             
 
-    def getMeta(self, name):
+    def getMeta(self, name, dataSubType):
         fileInfo = {
             "name" : name,
             "annotations" : {
                 "fileFype" : "clinicalMatrix",
                 "lastModified" :  self.config.version,
-                'dataSubType' : "clinical",
+                'dataSubType' : dataSubType,
                 "rowKeySrc" : "tcga.%s" % (self.config.abbr)
             }            
         }
@@ -991,41 +991,37 @@ class TCGAClinicalImport(FileImporter):
     
     def fileBuild(self, dataSubType):
 
-        matrixList = [ "patient", "sample", "radiation", "drug", "portion", "analyte", "aliquot", "followup" ]
-        if self.config.clinical_type is not None:
-            matrixList = [ self.config.clinical_type ]
 
-        for matrixName in matrixList:
-            if os.path.exists( "%s/%s" % (self.work_dir, matrixName)):
-                subprocess.call("cat %s/%s | sort -k 1 > %s/%s.sort" % (self.work_dir, matrixName, self.work_dir, matrixName), shell=True)
-                handle = TableReader(self.work_dir + "/" + matrixName + ".sort")
-                matrix = {}
-                colEnum = {}
-                for key, value in handle:
-                    if key not in matrix:
-                        matrix[key] = {}
-                    for col in value:
-                        matrix[key][col] = value[col]
-                        if col not in colEnum:
-                            if not self.config.sanitize or col not in [ 'race', 'ethnicity' ]:
-                                colEnum[col] = len(colEnum)
-                
-                handle = open( os.path.join(self.work_dir, matrixName + "_file"), "w")
-                cols = [None] * (len(colEnum))
+        if os.path.exists( "%s/%s" % (self.work_dir, dataSubType)):
+            subprocess.call("cat %s/%s | sort -k 1 > %s/%s.sort" % (self.work_dir, dataSubType, self.work_dir, dataSubType), shell=True)
+            handle = TableReader(self.work_dir + "/" + dataSubType + ".sort")
+            matrix = {}
+            colEnum = {}
+            for key, value in handle:
+                if key not in matrix:
+                    matrix[key] = {}
+                for col in value:
+                    matrix[key][col] = value[col]
+                    if col not in colEnum:
+                        if not self.config.sanitize or col not in [ 'race', 'ethnicity' ]:
+                            colEnum[col] = len(colEnum)
+            
+            handle = open( os.path.join(self.work_dir, dataSubType + "_file"), "w")
+            cols = [None] * (len(colEnum))
+            for col in colEnum:
+                cols[colEnum[col]] = col
+            handle.write("sample\t%s\n" % ("\t".join(cols)))
+            for key in matrix:
+                cols = [""] * (len(colEnum))
                 for col in colEnum:
-                    cols[colEnum[col]] = col
-                handle.write("sample\t%s\n" % ("\t".join(cols)))
-                for key in matrix:
-                    cols = [""] * (len(colEnum))
-                    for col in colEnum:
-                        if col in matrix[key]:
-                            cols[colEnum[col]] = matrix[key][col]['value']
-                    handle.write("%s\t%s\n" % (key, "\t".join(cols).encode("ASCII", "replace")))
-                handle.close()
-                self.emitFile( matrixName, matrixName, self.getMeta(self.config.name + "." + matrixName), "%s/%s_file"  % (self.work_dir, matrixName)) 
-        
-        
-        
+                    if col in matrix[key]:
+                        cols[colEnum[col]] = matrix[key][col]['value']
+                handle.write("%s\t%s\n" % (key, "\t".join(cols).encode("ASCII", "replace")))
+            handle.close()
+            self.emitFile( dataSubType, self.getMeta(self.config.name + "." + dataSubType, dataSubType), "%s/%s_file"  % (self.work_dir, dataSubType)) 
+    
+    
+    
 class AgilentImport(TCGAMatrixImport):
     dataSubTypes = { 
         'geneExp' : { 
