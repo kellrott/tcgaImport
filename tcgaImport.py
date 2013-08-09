@@ -373,7 +373,7 @@ class FileImporter:
             for o in self.out:
                 self.out[o].close()
             self.fileBuild(dsubtype)
-        #shutil.rmtree(self.work_dir)       
+        shutil.rmtree(self.work_dir)       
     
     def checkExclude( self, name ):
         for e in self.excludes:
@@ -890,7 +890,10 @@ class TCGAClinicalImport(FileImporter):
         for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/*"):
             if 'xsd_ver' in attr:
                 #print patientName, stack[-1], attr, text
-                patient_data[attr.get('preferred_name', stack[-1])] = { "value" : text }
+                p_name = attr.get('preferred_name', stack[-1])
+                if len(p_name) == 0:
+                    p_name = stack[-1]
+                patient_data[p_name] = { "value" : text }
         if dataSubType == "patient":
             self.emit( patient_barcode, patient_data, "patient" )
         
