@@ -40,7 +40,8 @@ if __name__ == "__main__":
     parser.add_argument("--user", help="UserName", default=None)
     parser.add_argument("--password", help="Password", default=None)
     parser.add_argument("--project", help="Project", default=None)
-    
+    parser.add_argument("--acronym", help="Limit to one Acronym", default=None)
+
     args = parser.parse_args()
     
     syn = synapseclient.Synapse()
@@ -54,33 +55,32 @@ if __name__ == "__main__":
         meta = json.loads(handle.read())
         handle.close()
         
-        dpath = re.sub(r'.json$', '', a)
-        
-        name = meta['name']
-                                    
-        query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, name)
-        res = syn.query(query)
-        #print meta['@id'], res
-        if res['totalNumberOfResults'] != 0:
-            log( "Found " + res['results'][0]['entity.id'] )                    
-            ent = syn.getEntity( res['results'][0]['entity.id'] )
+        if args.acronym is None or args.acronym == meta['annotations']['acronym']:
+            dpath = re.sub(r'.json$', '', a)            
+            name = meta['name']                                        
+            query = "select * from entity where benefactorId=='%s' and name=='%s'" % (args.project, name)
+            res = syn.query(query)
+            #print meta['@id'], res
+            if res['totalNumberOfResults'] != 0:
+                log( "Found " + res['results'][0]['entity.id'] )                    
+                ent = syn.downloadEntity( res['results'][0]['entity.id'] )
 
-            if 'description' in meta:
-                ent['description'] = meta['description']
-            if 'platform' in meta:
-                ent['platform'] = meta['platform']
-            ent['species'] = 'Homo sapiens'
-            ent['disease'] = 'cancer'
-            syn.updateEntity(ent)
-            annot = syn.getAnnotations(ent)
-            for field in meta['annotations']:
-                d = meta['annotations'][field]
-                if isinstance(d, list):
-                    annot[field] = d
-                else:
-                    annot[field] = [d]
-            print annot
-            syn.setAnnotations(ent, annot)
-            #sys.exit(0)
+                if 'description' in meta:
+                    ent['description'] = meta['description']
+                if 'platform' in meta:
+                    ent['platform'] = meta['platform']
+                ent['species'] = 'Homo sapiens'
+                ent['disease'] = 'cancer'
+                syn.updateEntity(ent)
+                annot = syn.getAnnotations(ent)
+                for field in meta['annotations']:
+                    d = meta['annotations'][field]
+                    if isinstance(d, list):
+                        annot[field] = d
+                    else:
+                        annot[field] = [d]
+                print annot
+                syn.setAnnotations(ent, annot)
+                #sys.exit(0)
 
 

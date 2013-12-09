@@ -9,14 +9,15 @@
 hostname
 #export TMPDIR=/scratch/tmp
 
-for a in `./tcgaImport.py --all-clinical | grep $1`; do
-	if [ ! -e ./check/$a ]; then
-		./tcgaImport.py -u $DATADIR/tcga_uuid_map -w $WORKDIR -m $MIRROR --outdir $OUTDIR -d -r -b $a
-		if (($? == "0")); then 
-			touch ./check/bio.$1; 
-		fi
+#for a in `./tcgaImport.py list clinical`; do
+a=$1
+if [ ! -e ./check/$a ]; then
+	./tcgaImport.py build -u $DATADIR/tcga_uuid_map -w $WORKDIR -m $MIRROR --outdir $OUTDIR -d $a
+	if (($? == "0")); then 
+		touch ./check/bio.$1; 
 	fi
-done
+fi
+#done
 
 #./tcgaIDDag.py $1 > iddag/$1.iddag
 

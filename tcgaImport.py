@@ -4,44 +4,6 @@
 """
 Script to scan and extract TCGA data and compile it into coherent matrices
 
-Usage::
-    
-    tcga2cgdata.py [options]
-
-Options::
-    
-      -h, --help            show this help message and exit
-      -a, --platform-list   Get list of platforms
-      -p PLATFORM, --platform=PLATFORM
-                            Platform Selection
-      -l, --supported       List Supported Platforms
-      -f FILELIST, --filelist=FILELIST
-                            List files needed to convert TCGA project basename
-                            into cgData
-      -b BASENAME, --basename=BASENAME
-                            Convert TCGA project basename into cgData
-      -m MIRROR, --mirror=MIRROR
-                            Mirror Location
-      -w WORKDIR_BASE, --workdir=WORKDIR_BASE
-                            Working directory
-      -o OUTDIR, --out-dir=OUTDIR
-                            Working directory
-      -c CANCER, --cancer=CANCER
-                            List Archives by cancer type
-      -d DOWNLOAD, --download=DOWNLOAD
-                            Download files for archive
-      -e LEVEL, --level=LEVEL
-                            Data Level
-      -s CHECKSUM, --check-sum=CHECKSUM
-                            Check project md5
-      -r, --sanitize        Remove race/ethnicity from clinical data
-
-
-Example::
-    
-    ./scripts/tcga2cgdata.py -b intgen.org_KIRC_bio -m /inside/depot -e 1 -r -w tmp
-
-
 """
 
 from xml.dom.minidom import parseString
@@ -207,7 +169,7 @@ class BuildConf:
             return uuid
         return self.uuid_table[uuid]
     
-    def getOutPath(self, dataSubType):
+    def getOutPath(self, dataSubType, extension):
         """
         if self.outpath is not None:
             return self.outpath
@@ -216,9 +178,9 @@ class BuildConf:
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
         """
-        return os.path.join(self.outdir, self.name + "." + dataSubType)
+        return os.path.join(self.outdir, self.name + "." + dataSubType + "." + extension)
 
-    def getOutMeta(self, dataSubType):
+    def getOutMeta(self, dataSubType, extension):
         """
         if self.outpath is not None:
             if self.metapath is not None:
@@ -227,7 +189,7 @@ class BuildConf:
         if name in self.clinical_type_map:
             return self.clinical_type_map[name][1]
         """
-        return os.path.join(self.outdir, self.name + "." + dataSubType) + ".json"
+        return os.path.join(self.outdir, self.name + "." + dataSubType + "." + extension) + ".json"
 
     def getOutError(self, name):
         if self.outpath is not None:
@@ -266,6 +228,7 @@ def getBaseBuildConf(basename, platform, mirror):
             for e2 in CustomQuery(e['center']):
                 meta['annotations']['centerTitle'] = e2['displayName']
                 meta['annotations']['center'] = e2['name']
+                meta['annotations']['basename'] = basename
         meta['provenance']['used'].append(
             {
                 'url' : "https://tcga-data.nci.nih.gov" + e['deployLocation'],
@@ -408,7 +371,7 @@ class FileImporter:
 
     def emitFile(self, dataSubType, meta, file):
         md5 = hashlib.md5()
-        oHandle = open(self.config.getOutPath(dataSubType), "wb")
+        oHandle = open(self.config.getOutPath(dataSubType, self.dataSubTypes[dataSubType]['extension']), "wb")
         with open(file,'rb') as f: 
             for chunk in iter(lambda: f.read(8192), ''): 
                 md5.update(chunk)
@@ -416,7 +379,7 @@ class FileImporter:
         oHandle.close()
         md5str = md5.hexdigest()
         meta['md5'] = md5str
-        mHandle = open(self.config.getOutMeta(dataSubType), "w")
+        mHandle = open(self.config.getOutMeta(dataSubType, self.dataSubTypes[dataSubType]['extension']), "w")
         mHandle.write( json.dumps(meta))
         mHandle.close()
         if len(self.errors):
@@ -652,7 +615,7 @@ class TCGASegmentImport(TCGAGeneticImport):
     
     def getMeta(self, name, dataSubType):
         matrixInfo = { 
-            'name' : name + "." + dataSubType, 
+            'name' : name + "." + dataSubType + ".bed", 
             'annotations' : {
                 'filetype' : 'bed5', 
                 "lastModified" : self.config.version,
@@ -739,7 +702,7 @@ class TCGAMatrixImport(TCGAGeneticImport):
                 'rowKeySrc' : self.dataSubTypes[dataSubType]['probeMap'],
                 'columnKeySrc' : "tcga.%s" % (self.config.abbr)
             }, 
-            'name' : name + "." + dataSubType, 
+            'name' : name + "." + dataSubType + ".tsv", 
         }
         matrixInfo = dict_merge(matrixInfo, self.ext_meta)
         matrixInfo = dict_merge(matrixInfo, self.config.meta)
@@ -979,7 +942,7 @@ class TCGAClinicalImport(FileImporter):
 
     def getMeta(self, name, dataSubType):
         fileInfo = {
-            "name" : name + "." + dataSubType,
+            "name" : name + "." + dataSubType + ".tsv",
             "annotations" : {
                 "fileFype" : "clinicalMatrix",
                 "lastModified" :  self.config.version,
@@ -1029,7 +992,8 @@ class AgilentImport(TCGAMatrixImport):
             'probeMap' : 'hugo',
             'sampleMap' : 'tcga.iddag',
             'dataType'  : 'genomicMatrix',
-            'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol']
+            'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol'],
+            'extension' : 'tsv'
         }
     }
    
@@ -1039,7 +1003,8 @@ class CGH1x1mImport(TCGASegmentImport):
         'cna' : {
             "sampleMap" : 'tcga.iddag',
             "dataType" : 'genomicSegment',
-            "probeFields" : ['seg.mean']
+            "probeFields" : ['seg.mean'],
+            'extension' : 'bed5'
         }
     }
 
@@ -1050,25 +1015,29 @@ class SNP6Import(TCGASegmentImport):
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean'],
-            'fileInclude' : r'^.*\.hg19.seg.txt$'
+            'fileInclude' : r'^.*\.hg19.seg.txt$',
+            'extension' : 'bed5'
         },
         'cna_nocnv' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean'],
-            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$'
+            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
+            'extension' : 'bed5'
         },
         'cna_probecount' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
-            'fileInclude' : r'^.*\.hg19.seg.txt$'
+            'fileInclude' : r'^.*\.hg19.seg.txt$',
+            'extension' : 'bed5'
         },
         'cna_nocnv_probecount' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
-            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$'
+            'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
+            'extension' : 'bed5'
         }
     }
     
@@ -1137,7 +1106,8 @@ class HmiRNAImport(TCGAMatrixImport):
             'probeMap' : 'agilentHumanMiRNA',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'probeFields' : ['unc_DWD_Batch_adjusted']
+            'probeFields' : ['unc_DWD_Batch_adjusted'],
+            'extension' : 'tsv'
         }
     }
     
@@ -1146,7 +1116,8 @@ class CGH244AImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['Segment_Mean']
+            'probeFields' : ['Segment_Mean'],
+            'extension' : 'bed5'
         }
     }
 
@@ -1158,7 +1129,8 @@ class CGH415K_G4124A(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
-            'startField' : 'Start'
+            'startField' : 'Start',
+            'extension' : 'bed5'
         }
     }
 
@@ -1170,7 +1142,8 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
-            'startField' : 'Start'
+            'startField' : 'Start',
+            'extension' : 'bed5'
         }
     }
     
@@ -1187,7 +1160,8 @@ class HT_HGU133A(TCGAMatrixImport):
             'probeMap' : 'affyU133a',
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
-            'probeFields' : ['Signal']
+            'probeFields' : ['Signal'],
+            'extension' : 'tsv'
         }
     }
 
@@ -1198,7 +1172,8 @@ class HuEx1_0stv2(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['Signal'],
-            'fileInclude' : '^.*gene.txt$|^.*sdrf.txt$'
+            'fileInclude' : '^.*gene.txt$|^.*sdrf.txt$',
+            'extension' : 'tsv'
         }
     }
 
@@ -1207,7 +1182,8 @@ class Human1MDuoImport(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['mean']
+            'probeFields' : ['mean'],
+            'extension' : 'bed5'
         }
     }
 
@@ -1216,7 +1192,8 @@ class HumanHap550(TCGASegmentImport):
         'cna' : {
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
-            'probeFields' : ['mean']
+            'probeFields' : ['mean'],
+            'extension' : 'bed5'
         }
     }
 
@@ -1227,7 +1204,8 @@ class HumanMethylation27(TCGAMatrixImport):
             'sampleMap' :  'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'fileExclude' : '.*.adf.txt',
-            'probeFields' : ['Beta_Value', 'Beta_value']
+            'probeFields' : ['Beta_Value', 'Beta_value'],
+            'extension' : 'tsv'
         }
     }
     
@@ -1239,7 +1217,8 @@ class HumanMethylation450(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'fileExclude' : '.*.adf.txt',
-            'probeFields' :  ['Beta_value', 'Beta_Value']
+            'probeFields' :  ['Beta_value', 'Beta_Value'],
+            'extension' : 'tsv'
         }
     }
 
@@ -1293,7 +1272,8 @@ class Illumina_RNASeq(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*\.gene.quantification.txt$|^.*sdrf.txt$',
             'probeFields' : ['RPKM'],
-            'probeMap' : 'hugo.unc'
+            'probeMap' : 'hugo.unc',
+            'extension' : 'tsv'
         }
     }
 
@@ -1303,13 +1283,15 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*rsem.genes.normalized_results$|^.*sdrf.txt$',
             'probeFields' : ['normalized_count'],
-            'probeMap' : 'hugo.unc'
+            'probeMap' : 'hugo.unc',
+            'extension' : 'tsv'
         },
         'isoformExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*rsem.isoforms.results$',
             'probeFields' : ['raw_count'],
-            'probeMap' : 'ucsc.id'
+            'probeMap' : 'ucsc.id',
+            'extension' : 'tsv'
         }
     }
 
@@ -1319,7 +1301,8 @@ class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*gene.quantification.txt$',
             'probeFields' : ['RPKM'],
-            'probeMap' : 'hugo.unc'
+            'probeMap' : 'hugo.unc',
+            'extension' : 'tsv'
         }
     }
 
@@ -1329,7 +1312,8 @@ class MDA_RPPA_Core(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'probeMap' : "md_anderson_antibodies",
             'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design.txt$',
-            'probeFields' : [ 'Protein Expression', 'Protein.Expression' ]
+            'probeFields' : [ 'Protein Expression', 'Protein.Expression' ],
+            'extension' : 'tsv'
         }
     }
 
@@ -1349,7 +1333,8 @@ class Illumina_miRNASeq(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '^.*.mirna.quantification.txt$',
             'probeFields' : ['reads_per_million_miRNA_mapped'],
-            'probeMap' : 'hsa.mirna'
+            'probeMap' : 'hsa.mirna',
+            'extension' : 'tsv'
         }
     }
 
@@ -1357,42 +1342,51 @@ class bioImport(TCGAClinicalImport):
     dataSubTypes = {
         "patient" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'				
         }, 
         "sample" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "radiation" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "drug" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "portion" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "analyte" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "aliquot" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         }, 
         "followup" : {
             'sampleMap' : 'tcga.iddag',
-            'fileInclude' : '.*.xml$'
+            'fileInclude' : '.*.xml$',
+            'extension' : 'tsv'
         } 
     }
 
 class MafImport(FileImporter):
     dataSubTypes = {
-        'mutation' : {
-            'fileInclude' : '.*.maf$'
+        'maf' : {
+            'fileInclude' : '.*.maf$',
+            'extension' : 'maf'
         }
     }
 
@@ -1409,8 +1403,7 @@ class MafImport(FileImporter):
         return fileInfo
     
     def fileScan(self, path, dataSubType):
-        name = os.path.basename(path)
-        self.emitFile("mutation", self.getMeta(name, dataSubType), path)
+        self.emitFile(dataSubType, self.getMeta(self.config.name, dataSubType), path)
 
     def mageScan(self, path):
         if path.endswith(".idf.txt"):
@@ -1510,7 +1503,8 @@ tcgaConfig = {
     'bio' : bioImport,
     'IlluminaGA_DNASeq' : MafImport,
     'SOLiD_DNASeq' : MafImport,
-    'ABI' : MafImport
+    'ABI' : MafImport,
+    'Mutation Calling' : MafImport
 }
 
 
@@ -1583,22 +1577,14 @@ def main_list(options):
                 out[name] = True
 
     if options.list_type == "mutation":
-        q = CustomQuery("Archive[@isLatest=1][Platform[@alias=IlluminaGA_DNASeq]]")
+        q = CustomQuery("Archive[@isLatest=1][Platform[@alias=Mutation Calling]]")
         out = {}
         for e in q:
             if e['deployLocation'].count("anonymous"):
                 name = e['baseName']
                 if name not in out:
                     print name
-                    out[name] = True
-        q = CustomQuery("Archive[@isLatest=1][Platform[@alias=SOLiD_DNASeq]]")
-        out = {}
-        for e in q:
-            if e['deployLocation'].count("anonymous"):
-                name = e['baseName']
-                if name not in out:
-                    print name
-                    out[name] = True
+                    out[name] = True        
 
     """
     if options.list_platform_outputs:
@@ -1777,7 +1763,7 @@ if __name__ == "__main__":
     parser_list.add_argument("list_type", choices=[
         "platforms",
         "archives",
-        "mutations", 
+        "mutation", 
         "platform",
         "supported",
         "files",
