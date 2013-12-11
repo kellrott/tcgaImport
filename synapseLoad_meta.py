@@ -63,15 +63,14 @@ if __name__ == "__main__":
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:
                 log( "Found " + res['results'][0]['entity.id'] )                    
-                ent = syn.downloadEntity( res['results'][0]['entity.id'] )
-
+                ent = syn.get(res['results'][0]['entity.id'], downloadFile=False)
                 if 'description' in meta:
                     ent['description'] = meta['description']
                 if 'platform' in meta:
                     ent['platform'] = meta['platform']
                 ent['species'] = 'Homo sapiens'
                 ent['disease'] = 'cancer'
-                syn.updateEntity(ent)
+                syn.store(ent, forceVersion=False)
                 annot = syn.getAnnotations(ent)
                 for field in meta['annotations']:
                     d = meta['annotations'][field]
