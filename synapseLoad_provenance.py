@@ -47,8 +47,8 @@ if __name__ == "__main__":
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:
                 log( "Found " + res['results'][0]['entity.id'] )                    
-                ent = syn.getEntity( res['results'][0]['entity.id'] )
-
+                #ent = syn.getEntity( res['results'][0]['entity.id'] )
+                ent_id = res['results'][0]['entity.id']
                 if 'provenance' in meta:
                     used_refs = meta['provenance']['used']
                     for u in used_refs:
@@ -65,5 +65,5 @@ if __name__ == "__main__":
                         #print ent
                         #prov = syn.getProvenance(ent)
                         #print json.dumps(prov, indent=4)
-                        syn.setProvenance(ent, activity)
+                        syn.setProvenance(ent_id, activity)
                         #sys.exit(0)

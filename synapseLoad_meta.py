@@ -63,6 +63,7 @@ if __name__ == "__main__":
             #print meta['@id'], res
             if res['totalNumberOfResults'] != 0:
                 log( "Found " + res['results'][0]['entity.id'] )                    
+                """
                 ent = syn.get(res['results'][0]['entity.id'], downloadFile=False)
                 if 'description' in meta:
                     ent['description'] = meta['description']
@@ -71,7 +72,9 @@ if __name__ == "__main__":
                 ent['species'] = 'Homo sapiens'
                 ent['disease'] = 'cancer'
                 syn.store(ent, forceVersion=False)
-                annot = syn.getAnnotations(ent)
+                """
+                ent_id = res['results'][0]['entity.id']
+                annot = syn.getAnnotations(ent_id)
                 for field in meta['annotations']:
                     d = meta['annotations'][field]
                     if isinstance(d, list):
@@ -79,7 +82,7 @@ if __name__ == "__main__":
                     else:
                         annot[field] = [d]
                 print annot
-                syn.setAnnotations(ent, annot)
+                syn.setAnnotations(ent_id, annot)
                 #sys.exit(0)
 
 
