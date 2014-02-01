@@ -858,6 +858,24 @@ class TCGAClinicalImport(FileImporter):
                     p_name = stack[-1]
                 patient_data[p_name] = { "value" : text }
         if dataSubType == "patient":
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/stage_event/*"):
+                if 'xsd_ver' in attr:
+                    p_name = attr.get('preferred_name', stack[-1])
+                    if len(p_name) == 0:
+                        p_name = stack[-1]
+                    patient_data[p_name] = { "value" : text }
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/stage_event/*/*"):
+                if 'xsd_ver' in attr:
+                    p_name = attr.get('preferred_name', stack[-1])
+                    if len(p_name) == 0:
+                        p_name = stack[-1]
+                    patient_data[p_name] = { "value" : text }
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/stage_event/tnm_categories/*/*"):
+                if 'xsd_ver' in attr:
+                    p_name = attr.get('preferred_name', stack[-1])
+                    if len(p_name) == 0:
+                        p_name = stack[-1]
+                    patient_data[p_name] = { "value" : text }
             self.emit( patient_barcode, patient_data, "patient" )
         
         if dataSubType == "sample":
