@@ -219,7 +219,7 @@ pred_mapping = {
     'drug' : lambda x: TCGA_NS[x],
     'radiation' : lambda x: TCGA_NS[x],
     'followup' : lambda x: TCGA_NS[x],
-    'tumor_tissue_site' : lambda x: TCGA_OWL[x],
+    'tumor_tissue_site' : lambda x: TCGA_OWL[x.replace(" ", "_")],
     'vital_status' : lambda x: TCGA_OWL[x],
     'gender' : lambda x: TCGA_OWL[x]
 }
