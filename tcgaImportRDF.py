@@ -221,13 +221,18 @@ pred_mapping = {
     'followup' : lambda x: TCGA_NS[x],
     'tumor_tissue_site' : lambda x: TCGA_OWL[x.replace(" ", "_")],
     'vital_status' : lambda x: TCGA_OWL[x],
-    'gender' : lambda x: TCGA_OWL[x]
+    'gender' : lambda x: TCGA_OWL[x],
+    'ajcc_tumor_pathologic_pt' : lambda x: TCGA_OWL[x],
+    'ajcc_nodes_pathologic_pn' : lambda x: TCGA_OWL[x],
+    'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[x]
 }
 
 class ClinicalParser:
 
     def __init__(self):
         self.gr = Graph()
+        self.gr.bind( "tcga", TCGA_NS )
+        self.gr.bind( "tcga_clin", TCGA_OWL )
 
     def parseXMLFile(self, dom, dataSubType):    
         root_node = dom.childNodes[0]
@@ -251,7 +256,17 @@ class ClinicalParser:
                         p_name = stack[-1]
                     if len(text):
                         self.emit( patient_barcode, p_name, text )
-
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/stage_event/*/*"):
+                if 'xsd_ver' in attr:
+                    p_name = attr.get('preferred_name', stack[-1])
+                    if len(text):
+                        self.emit(patient_barcode, p_name, text)
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/patient/stage_event/tnm_categories/*/*"):
+                if 'xsd_ver' in attr:
+                    p_name = attr.get('preferred_name', stack[-1])
+                    if len(text):
+                        self.emit(patient_barcode, p_name, text)
+                    
         if dataSubType == "sample":
             for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample"):
                 sample_barcode = None
