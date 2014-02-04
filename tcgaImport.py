@@ -25,6 +25,7 @@ import subprocess
 from glob import glob
 import shutil
 import subprocess
+import logging
 from argparse import ArgumentParser
 from urlparse import urlparse
 
@@ -201,7 +202,7 @@ class BuildConf:
 
 def getBaseBuildConf(basename, platform, mirror):
     dates = []
-    print "TCGA Query for: ", basename
+    logging.debug("TCGA Query for: %s" % (basename))
     q = tcgaConfig[platform].getArchiveQuery(basename)
     urls = {}
     meta = None
@@ -237,14 +238,14 @@ def getBaseBuildConf(basename, platform, mirror):
         )
         urls[ mirror + e['deployLocation'] ] = platform
 
-    print "TCGA Query for mage-tab: ", basename
+    logging.debug("TCGA Query for mage-tab: %s" % (basename))
     q = CustomQuery("Archive[@baseName=%s][@isLatest=1][ArchiveType[@type=mage-tab]]" % (basename))
     for e in q:
         dates.append( datetime.datetime.strptime( e['addedDate'], "%m-%d-%Y" ) )
         q2 = CustomQuery(e['platform'])
         platform = None
         for e2 in q2:
-            print e2
+            logging.debug("%s" % (e2))
             platform = e2['name']
         meta['provenance']['used'].append( 
             {
@@ -255,7 +256,7 @@ def getBaseBuildConf(basename, platform, mirror):
         urls[ mirror + e['deployLocation'] ] = platform
     
     if len(dates) == 0:
-        print "No Files found"
+        logging.debug("No Files found")
         return
     dates.sort()
     dates.reverse()
@@ -680,7 +681,7 @@ class TCGASegmentImport(TCGAGeneticImport):
 
 
 def dict_merge(x, y):
-    print "dict", x, y
+    #print "dict", x, y
     result = dict(x)
     for k,v in y.iteritems():
         if k in result:
@@ -1011,7 +1012,8 @@ class AgilentImport(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType'  : 'genomicMatrix',
             'probeFields' : ['log2 lowess normalized (cy5/cy3) collapsed by gene symbol'],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
     }
    
@@ -1022,7 +1024,8 @@ class CGH1x1mImport(TCGASegmentImport):
             "sampleMap" : 'tcga.iddag',
             "dataType" : 'genomicSegment',
             "probeFields" : ['seg.mean'],
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
 
@@ -1034,28 +1037,32 @@ class SNP6Import(TCGASegmentImport):
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean'],
             'fileInclude' : r'^.*\.hg19.seg.txt$',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.hg19.cna.bed" % (x)
         },
         'cna_nocnv' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['seg.mean'],
             'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.hg19.cna_nocnv.bed" % (x)
         },
         'cna_probecount' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
             'fileInclude' : r'^.*\.hg19.seg.txt$',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.hg19.cna_probecount.bed" % (x)
         },
         'cna_nocnv_probecount' : {
             'sampleMap' :'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Num_Probes'],
             'fileInclude' : r'^.*\.nocnv_hg19.seg.txt$',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.hg19.cna_nocnv_probecount.bed" % (x)
         }
     }
     
@@ -1125,7 +1132,8 @@ class HmiRNAImport(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['unc_DWD_Batch_adjusted'],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
     }
     
@@ -1135,7 +1143,8 @@ class CGH244AImport(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['Segment_Mean'],
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
 
@@ -1148,7 +1157,8 @@ class CGH415K_G4124A(TCGASegmentImport):
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
             'startField' : 'Start',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
 
@@ -1161,7 +1171,8 @@ class IlluminaHiSeq_DNASeqC(TCGASegmentImport):
             'endField' : 'End',
             'probeFields' : ['Segment_Mean'],
             'startField' : 'Start',
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
     
@@ -1179,7 +1190,8 @@ class HT_HGU133A(TCGAMatrixImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicMatrix',
             'probeFields' : ['Signal'],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
     }
 
@@ -1191,7 +1203,8 @@ class HuEx1_0stv2(TCGAMatrixImport):
             'dataType' : 'genomicMatrix',
             'probeFields' : ['Signal'],
             'fileInclude' : '^.*gene.txt$|^.*sdrf.txt$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
     }
 
@@ -1201,7 +1214,8 @@ class Human1MDuoImport(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['mean'],
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
 
@@ -1211,7 +1225,8 @@ class HumanHap550(TCGASegmentImport):
             'sampleMap' : 'tcga.iddag',
             'dataType' : 'genomicSegment',
             'probeFields' : ['mean'],
-            'extension' : 'bed5'
+            'extension' : 'bed',
+            'nameGen' : lambda x : "%s.cna.bed" % (x)
         }
     }
 
@@ -1223,7 +1238,8 @@ class HumanMethylation27(TCGAMatrixImport):
             'dataType' : 'genomicMatrix',
             'fileExclude' : '.*.adf.txt',
             'probeFields' : ['Beta_Value', 'Beta_value'],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
         }
     }
     
@@ -1236,7 +1252,8 @@ class HumanMethylation450(TCGAMatrixImport):
             'dataType' : 'genomicMatrix',
             'fileExclude' : '.*.adf.txt',
             'probeFields' :  ['Beta_value', 'Beta_Value'],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.betaValue.tsv" % (x)
         }
     }
 
@@ -1291,7 +1308,8 @@ class Illumina_RNASeq(TCGAMatrixImport):
             'fileInclude' : r'^.*\.gene.quantification.txt$|^.*sdrf.txt$',
             'probeFields' : ['RPKM'],
             'probeMap' : 'hugo.unc',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
     }
 
@@ -1302,14 +1320,16 @@ class Illumina_RNASeqV2(TCGAMatrixImport):
             'fileInclude' : r'^.*rsem.genes.normalized_results$|^.*sdrf.txt$',
             'probeFields' : ['normalized_count'],
             'probeMap' : 'hugo.unc',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         },
         'isoformExp' : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : r'^.*rsem.isoforms.results$',
             'probeFields' : ['raw_count'],
             'probeMap' : 'ucsc.id',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.isoformExp.tsv" % (x)
         }
     }
 
@@ -1320,7 +1340,8 @@ class IlluminaHiSeq_RNASeq(TCGAMatrixImport):
             'fileInclude' : r'^.*gene.quantification.txt$',
             'probeFields' : ['RPKM'],
             'probeMap' : 'hugo.unc',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.geneExp.tsv" % (x)
         }
     }
 
@@ -1331,7 +1352,8 @@ class MDA_RPPA_Core(TCGAMatrixImport):
             'probeMap' : "md_anderson_antibodies",
             'fileExclude' : r'^.*.antibody_annotation.txt|^.*array_design.txt$',
             'probeFields' : [ 'Protein Expression', 'Protein.Expression' ],
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.RPPA.tsv" % (x)
         }
     }
 
@@ -1352,7 +1374,8 @@ class Illumina_miRNASeq(TCGAMatrixImport):
             'fileInclude' : '^.*.mirna.quantification.txt$',
             'probeFields' : ['reads_per_million_miRNA_mapped'],
             'probeMap' : 'hsa.mirna',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.miRNAExp.tsv" % (x)
         }
     }
 
@@ -1361,42 +1384,50 @@ class bioImport(TCGAClinicalImport):
         "patient" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'				
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.patient.tsv" % (x)		
         }, 
         "sample" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.sample.tsv" % (x)
         }, 
         "radiation" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.radiation.tsv" % (x)
         }, 
         "drug" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.drug.tsv" % (x)
         }, 
         "portion" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.portion.tsv" % (x)
         }, 
         "analyte" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.analyte.tsv" % (x)
         }, 
         "aliquot" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.aliquot.tsv" % (x)
         }, 
         "followup" : {
             'sampleMap' : 'tcga.iddag',
             'fileInclude' : '.*.xml$',
-            'extension' : 'tsv'
+            'extension' : 'tsv',
+            'nameGen' : lambda x : "%s.followup.tsv" % (x)
         } 
     }
 
@@ -1404,7 +1435,8 @@ class MafImport(FileImporter):
     dataSubTypes = {
         'maf' : {
             'fileInclude' : '.*.maf$',
-            'extension' : 'maf'
+            'extension' : 'maf',
+            'nameGen' : lambda x : "%s.maf" % (x)
         }
     }
 
@@ -1552,14 +1584,23 @@ def supported_list():
         if e['name'] in tcgaConfig:
             yield e['name']
 
-def archive_list():
-    q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]]")
-    out = {}
-    for e in q:
-        name = e['baseName']
-        if name not in out:
-            out[name] = True
-    return out.keys()
+def archive_list(platform=None):
+    if platform is None:
+        q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]]")
+        out = {}
+        for e in q:
+            name = e['baseName']
+            if name not in out:
+                out[name] = True
+        return out.keys()
+    else:
+        q = CustomQuery("Archive[@isLatest=1][ArchiveType[@type=Level_3]][Platform[@alias=%s]]" % (platform))
+        out = {}
+        for e in q:
+            name = e['baseName']
+            if name not in out:
+                out[name] = True
+        return out.keys()
 
 
 def main_list(options):
