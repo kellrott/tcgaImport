@@ -223,8 +223,8 @@ pred_mapping = {
     'vital_status' : lambda x: TCGA_OWL[x],
     'gender' : lambda x: TCGA_OWL[x],
     'ajcc_tumor_pathologic_pt' : lambda x: TCGA_OWL[x],
-    'ajcc_nodes_pathologic_pn' : lambda x: TCGA_OWL[x],
-    'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[x]
+    'ajcc_nodes_pathologic_pn' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ],
+    'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ]
 }
 
 class ClinicalParser:
