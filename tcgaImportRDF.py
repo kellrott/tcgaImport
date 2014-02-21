@@ -224,7 +224,8 @@ pred_mapping = {
     'gender' : lambda x: TCGA_OWL[x],
     'ajcc_tumor_pathologic_pt' : lambda x: TCGA_OWL[x],
     'ajcc_nodes_pathologic_pn' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ],
-    'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ]
+    'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ],
+    'analysis' : lambda x : TCGA_NS[x]
 }
 
 class ClinicalParser:
@@ -306,6 +307,7 @@ class ClinicalParser:
                 aliquot_barcode = None
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/bcr_aliquot_barcode"):
                     aliquot_barcode = c_text
+                self.emit( aliquot_barcode[:16], 'analysis', aliquot_barcode ) #simplfying the TCGA id hierarchy
                 self.emit( aliquot_barcode, 'type', "Aliquot")
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/*"):
                     if 'xsd_ver' in c_attr:
