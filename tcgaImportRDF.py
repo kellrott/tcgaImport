@@ -234,7 +234,8 @@ def main_build(options):
             "fileType" : "ttl",
             "basename" : args.basename,
             "center" : centerName,
-            "acronym" : acronym
+            "acronym" : acronym,
+            "platform" : "bio"
         },
         "platform": "bio",
         "species": "Homo sapiens",
