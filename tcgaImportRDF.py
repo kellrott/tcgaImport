@@ -8,6 +8,7 @@ from urlparse import urlparse
 from rdflib import Namespace, BNode, Graph, Literal, URIRef
 from rdflib.namespace import RDF
 
+import json
 import time
 import random
 import urllib
@@ -125,11 +126,28 @@ def dom_scan_iter(node, stack, prefix):
         elif node.nodeType == node.TEXT_NODE:
             yield node, prefix, None, getText( node.childNodes )
 
+
+
+def fileDigest( file ):
+    md5 = hashlib.md5()
+    with open(file,'rb') as f: 
+        for chunk in iter(lambda: f.read(8192), ''): 
+            md5.update(chunk)
+    return md5.hexdigest()
+
 def main_build(options):
 
     urls = []    
+    centerName = None
+    acronym = None
     q = CustomQuery("Archive[@baseName=%s][@isLatest=1]" % (options.basename))
     for e in q:
+        if acronym is None:
+            for a in CustomQuery(e['disease']):
+                acronym = a['abbreviation']
+        if centerName is None:
+            for a in CustomQuery(e['center']):
+                centerName = a['name']
         urls.append( "https://tcga-data.nci.nih.gov" + e['deployLocation'])
     
     if options.mirror is None:
@@ -201,11 +219,39 @@ def main_build(options):
             clin.parseXMLFile(xml, dataSubType)
 
     if args.output is not None:
-        ohandle = open(args.output, "w")
+        output_path = args.output
     else:
-        ohandle = open(args.basename + ".ttl", "w")
+        output_path = args.basename + ".ttl"
+
+    ohandle = open(output_path, "w")
     ohandle.write(clin.gr.serialize(format="turtle"))
     ohandle.close()  
+
+    meta_data = {
+        "name" : args.basename + ".ttl",
+        "provenance" : { "used" : [], "name" : "tcgaImportRDF" },
+        "annotations" : {
+            "fileType" : "ttl",
+            "basename" : args.basename,
+            "center" : centerName,
+            "acronym" : acronym,
+            "platform" : "bio"
+        },
+        "platform": "bio",
+        "species": "Homo sapiens",
+        "md5": fileDigest( output_path )
+    }
+    for u in urls:
+        meta_data['provenance']['used'].append( 
+            {
+                "url" : u,
+                "concreteType": "org.sagebionetworks.repo.model.provenance.UsedURL"
+            }
+        )
+    
+    ohandle = open(output_path + ".json", "w")
+    ohandle.write(json.dumps(meta_data))
+    ohandle.close()
 
     shutil.rmtree(work_dir)       
       

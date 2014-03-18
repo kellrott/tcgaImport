@@ -963,7 +963,7 @@ class TCGAClinicalImport(FileImporter):
         fileInfo = {
             "name" : name + "." + dataSubType + ".tsv",
             "annotations" : {
-                "fileFype" : "clinicalMatrix",
+                "fileType" : "clinicalMatrix",
                 "lastModified" :  self.config.version,
                 'dataSubType' : dataSubType,
                 "rowKeySrc" : "tcga.%s" % (self.config.abbr)
@@ -1444,6 +1444,7 @@ class MafImport(FileImporter):
         fileInfo = {
             "name" : name,
             "annotations" : {
+                "dataSubType" : "mutation",
                 "fileType" : "maf",
                 "lastModified" :  self.config.version,
             }
