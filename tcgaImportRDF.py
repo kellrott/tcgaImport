@@ -271,7 +271,8 @@ pred_mapping = {
     'ajcc_tumor_pathologic_pt' : lambda x: TCGA_OWL[x],
     'ajcc_nodes_pathologic_pn' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ],
     'ajcc_metastasis_pathologic_pm' : lambda x: TCGA_OWL[ re.sub(r'[ \(\)]', "_",x) ],
-    'analysis' : lambda x : TCGA_NS[x]
+    'analysis' : lambda x : TCGA_NS[x],
+    'disease_code' : lambda x: TCGA_OWL[x]
 }
 
 class ClinicalParser:
@@ -313,6 +314,9 @@ class ClinicalParser:
                     p_name = attr.get('preferred_name', stack[-1])
                     if len(text):
                         self.emit(patient_barcode, p_name, text)
+
+            for node, stack, attr, text in dom_scan(root_node, "tcga_bcr/admin/disease_code"):
+                self.emit(patient_barcode, 'disease_code', text)
                     
         if dataSubType == "sample":
             for s_node, s_stack, s_attr, s_text in dom_scan(root_node, "tcga_bcr/patient/samples/sample"):
@@ -320,6 +324,8 @@ class ClinicalParser:
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/bcr_sample_barcode"):
                     sample_barcode = c_text
                 self.emit( patient_barcode, "sample", sample_barcode)
+                self.emit( sample_barcode, "patient", patient_barcode)
+                
                 self.emit( sample_barcode, 'type', "Sample")
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "sample/*"):
                     if 'xsd_ver' in c_attr:
@@ -353,7 +359,8 @@ class ClinicalParser:
                 aliquot_barcode = None
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/bcr_aliquot_barcode"):
                     aliquot_barcode = c_text
-                self.emit( aliquot_barcode[:16], 'analysis', aliquot_barcode ) #simplfying the TCGA id hierarchy
+                self.emit( aliquot_barcode[:16], 'analyte', aliquot_barcode ) #simplfying the TCGA id hierarchy
+                self.emit( aliquot_barcode, 'sample', aliquot_barcode[:16] )
                 self.emit( aliquot_barcode, 'type', "Aliquot")
                 for c_node, c_stack, c_attr, c_text in dom_scan(s_node, "aliquot/*"):
                     if 'xsd_ver' in c_attr:
