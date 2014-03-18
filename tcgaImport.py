@@ -170,7 +170,7 @@ class BuildConf:
             return uuid
         return self.uuid_table[uuid]
     
-    def getOutPath(self, dataSubType, extension):
+    def getOutPath(self, nameGen):
         """
         if self.outpath is not None:
             return self.outpath
@@ -179,9 +179,9 @@ class BuildConf:
         if not os.path.exists(self.outdir):
             os.makedirs(self.outdir)
         """
-        return os.path.join(self.outdir, self.name + "." + dataSubType + "." + extension)
+        return os.path.join(self.outdir, nameGen(self.name))
 
-    def getOutMeta(self, dataSubType, extension):
+    def getOutMeta(self, nameGen):
         """
         if self.outpath is not None:
             if self.metapath is not None:
@@ -190,7 +190,7 @@ class BuildConf:
         if name in self.clinical_type_map:
             return self.clinical_type_map[name][1]
         """
-        return os.path.join(self.outdir, self.name + "." + dataSubType + "." + extension) + ".json"
+        return os.path.join(self.outdir, nameGen(self.name)) + ".json"
 
     def getOutError(self, name):
         if self.outpath is not None:
@@ -372,7 +372,7 @@ class FileImporter:
 
     def emitFile(self, dataSubType, meta, file):
         md5 = hashlib.md5()
-        oHandle = open(self.config.getOutPath(dataSubType, self.dataSubTypes[dataSubType]['extension']), "wb")
+        oHandle = open(self.config.getOutPath(self.dataSubTypes[dataSubType]['nameGen']), "wb")
         with open(file,'rb') as f: 
             for chunk in iter(lambda: f.read(8192), ''): 
                 md5.update(chunk)
@@ -380,7 +380,7 @@ class FileImporter:
         oHandle.close()
         md5str = md5.hexdigest()
         meta['md5'] = md5str
-        mHandle = open(self.config.getOutMeta(dataSubType, self.dataSubTypes[dataSubType]['extension']), "w")
+        mHandle = open(self.config.getOutMeta(self.dataSubTypes[dataSubType]['nameGen']), "w")
         mHandle.write( json.dumps(meta))
         mHandle.close()
         if len(self.errors):
@@ -1442,7 +1442,7 @@ class MafImport(FileImporter):
 
     def getMeta(self, name, dataSubType):
         fileInfo = {
-            "name" : name + "." + dataSubType,
+            "name" : name,
             "annotations" : {
                 "fileType" : "maf",
                 "lastModified" :  self.config.version,
