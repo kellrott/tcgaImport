@@ -1442,7 +1442,7 @@ class MafImport(FileImporter):
 
     def getMeta(self, name, dataSubType):
         fileInfo = {
-            "name" : name,
+            "name" : name + "." + dataSubType,
             "annotations" : {
                 "dataSubType" : "mutation",
                 "fileType" : "maf",
