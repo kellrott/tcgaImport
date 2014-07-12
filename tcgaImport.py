@@ -124,6 +124,7 @@ class BuildConf:
         self.mirror = opts.mirror
         self.outpath = opts.outpath
         self.download = opts.download
+        self.download_only = opts.download_only
         self.metapath = opts.metapath
         self.errorpath = opts.errorpath
         self.clinical_type = opts.clinical_type
@@ -152,7 +153,7 @@ class BuildConf:
             print "mkdir", dir
             os.makedirs(dir)
         if not os.path.exists( dst ):
-            if self.download:    
+            if self.download or self.download_only:    
                 print "download %s to %s" % (src, dst)
                 urllib.urlretrieve(src, dst)
             else:
@@ -311,10 +312,13 @@ class FileImporter:
         for record in self.build_req['provenance']['used']:
             url = record['url']
             path = self.config.getURLPath(url)
-            subprocess.check_call([ "tar", "xzf", path, "-C", self.work_dir])#, stderr=sys.stdout)
+            if not self.config.download_only:
+                subprocess.check_call([ "tar", "xzf", path, "-C", self.work_dir])#, stderr=sys.stdout)
         
     def run(self):        
         self.extractTars()
+        if self.config.download_only:
+            return
         #scan the magetab
         self.out = {}
         self.ext_meta = {}
@@ -1876,6 +1880,7 @@ if __name__ == "__main__":
     parser_build.add_argument("-m", "--mirror", dest="mirror", help="Mirror Location", default=None)
     parser_build.add_argument("-w", "--workdir", dest="workdir_base", help="Working directory", default="/tmp")
     parser_build.add_argument("-d", "--download", dest="download", help="Download files for archive", action="store_true", default=False)
+    parser_build.add_argument("--download-only", dest="download_only", help="Download files for archive then quit", action="store_true", default=False)
     parser_build.add_argument("-e", "--level", dest="level", help="Data Level ", default="3")
     parser_build.add_argument("--checksum", dest="checksum", help="Check project md5", action="store_true", default=False)
     parser_build.add_argument("--checksum-delete", dest="checksum_delete", help="Check project md5 and delete bad files", action="store_true", default=False)
