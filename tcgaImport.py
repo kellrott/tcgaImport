@@ -138,7 +138,8 @@ class BuildConf:
             handle = open(opts.uuid_table)
             for line in handle:
                 tmp = line.rstrip().split("\t")
-                self.uuid_table[tmp[0]] = tmp[1]
+                if len(tmp) == 2:
+                    self.uuid_table[tmp[0]] = tmp[1]
 
     def getURLPath(self, url):
         if self.mirror is None:
